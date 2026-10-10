@@ -1,0 +1,8 @@
+{
+  "name": "Remix Dero Vault",
+  "description": "Your digital granary. Simple, local-first automatic backup application for Windows. Plug in. Back up. Get on with your work.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

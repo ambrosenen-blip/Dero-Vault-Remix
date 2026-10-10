@@ -1,0 +1,59 @@
+name: Build Windows Application
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows x64 Desktop Application
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run TypeScript type check
+        run: npm run lint
+
+      - name: Build production bundle (Frontend & Embedded Server)
+        run: npm run build
+
+      - name: Package Windows desktop application (x64)
+        run: npm run package:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release artifacts exist
+        shell: bash
+        run: |
+          echo "Inspecting release artifacts..."
+          ls -la release/
+          if [ ! -f "release/DeroVault-Setup.exe" ] && [ ! -f "release/Dero Vault-1.0.0-win.zip" ]; then
+            echo "Error: Required Windows release artifacts not found!"
+            exit 1
+          fi
+          echo "Windows build artifacts verified successfully."
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeroVault-Windows-x64
+          path: |
+            release/*.exe
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 30

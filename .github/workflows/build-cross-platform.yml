@@ -1,0 +1,136 @@
+name: Cross-Platform Desktop Builds
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows x64 Release Build
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run TypeScript type check
+        run: npm run lint
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Package Windows desktop application
+        run: npm run package:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release artifacts exist
+        shell: bash
+        run: |
+          echo "Inspecting Windows release artifacts..."
+          ls -la release/
+          if [ ! -f "release/DeroVault-Setup.exe" ] && [ ! -f "release/Dero Vault-1.0.0-win.zip" ]; then
+            echo "Error: Required Windows release artifacts not found!"
+            exit 1
+          fi
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeroVault-Windows-x64
+          path: |
+            release/*.exe
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  build-macos:
+    name: macOS (Apple Silicon & Intel) Build
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run TypeScript type check
+        run: npm run lint
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Package macOS application
+        run: npm run package:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeroVault-macOS
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: warn
+          retention-days: 30
+
+  build-linux:
+    name: Linux (AppImage & deb) Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run TypeScript type check
+        run: npm run lint
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Package Linux desktop application
+        run: npm run package:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeroVault-Linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: warn
+          retention-days: 30
