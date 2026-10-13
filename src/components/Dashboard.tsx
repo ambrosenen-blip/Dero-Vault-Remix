@@ -20,6 +20,8 @@ import {
   Folder,
   ArrowRight,
   ShieldAlert,
+  Download,
+  Laptop,
 } from 'lucide-react';
 import { BackupSession, RemovableDrive } from '../types';
 import { DeroBrandBanner, DeroGranaryEmblem } from './BrandLogo';
@@ -32,6 +34,7 @@ interface DashboardProps {
   onCancelBackup: () => void;
   onViewReport: (session: BackupSession) => void;
   onOpenRegisterModal: (drive: RemovableDrive) => void;
+  onOpenDownloadModal?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -42,6 +45,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onCancelBackup,
   onViewReport,
   onOpenRegisterModal,
+  onOpenDownloadModal,
 }) => {
   // Format helpers
   const formatBytes = (bytes: number) => {
@@ -486,6 +490,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
         )}
+      </section>
+
+      {/* INSTALLABLE DESKTOP SOFTWARE CALLOUT */}
+      <section className="p-5 bg-gradient-to-r from-[#0D1B3D] via-[#11234F] to-[#0D1B3D] border border-[#1E3466] hover:border-[#F4A62A]/60 rounded-xl transition-all shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-[#F4A62A]/15 border border-[#F4A62A]/30 text-[#F4A62A] shrink-0">
+            <Laptop className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold font-['Poppins',sans-serif] text-white">
+                Dero Vault for Windows 10 &amp; 11
+              </h4>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-[#00A884]/20 text-[#00A884]">
+                Installable Software
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-1 max-w-xl font-['Inter',sans-serif]">
+              Run Dero Vault as a native desktop application with system tray minimize, automatic USB mounting, and hardware identity binding.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 shrink-0 self-start md:self-auto">
+          <a
+            href="/api/download/installer"
+            download="DeroVault-Setup.exe"
+            className="px-4 py-2 text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] rounded-lg transition-all flex items-center gap-2 shadow-sm font-['Poppins',sans-serif]"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download .exe (Installer)</span>
+          </a>
+          {onOpenDownloadModal && (
+            <button
+              onClick={onOpenDownloadModal}
+              className="px-3.5 py-2 text-xs font-medium text-slate-200 hover:text-white bg-[#132247] hover:bg-[#1A2E5E] border border-[#1E3466] rounded-lg transition-colors font-['Poppins',sans-serif]"
+            >
+              All Options
+            </button>
+          )}
+        </div>
       </section>
 
       {/* 5. CORE PHILOSOPHY CALLOUT with Granary Heritage Touch */}

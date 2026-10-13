@@ -3,9 +3,13 @@ name: Cross-Platform Desktop Builds
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -19,7 +23,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -50,7 +54,7 @@ jobs:
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: DeroVault-Windows-x64
+          name: DeroVault-Windows-Installer-x64
           path: |
             release/*.exe
             release/*.zip
@@ -68,7 +72,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -107,7 +111,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -134,3 +138,47 @@ jobs:
             release/*.deb
           if-no-files-found: warn
           retention-days: 30
+
+  publish-release:
+    name: Publish GitHub Release (Direct Downloads)
+    needs: [build-windows, build-macos, build-linux]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts
+
+      - name: Prepare release assets directory
+        run: |
+          mkdir -p final-assets
+          find downloaded-artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" \) -exec cp {} final-assets/ \;
+          ls -la final-assets/
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Dero Vault v1.0.0 — Official Desktop Release' }}
+          draft: false
+          prerelease: false
+          files: final-assets/*
+          body: |
+            ## Dero Vault — Your Digital Granary
+            
+            ### Direct Software Downloads:
+            - **Windows 10/11 Installer**: [`DeroVault-Setup.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}/DeroVault-Setup.exe) (Recommended: 1-click install)
+            - **Windows Portable (.zip)**: [`DeroVault-Windows-x64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}/DeroVault-Windows-x64.zip)
+            - **macOS Installer (.dmg)**: Available under Assets below
+            - **Linux (.AppImage / .deb)**: Available under Assets below
+
+            ### Core Features:
+            - Simple, local-first automatic backup application.
+            - Plug in your registered USB drive, and your office files are backed up quietly.
+            - 100% offline, private, zero telemetry.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

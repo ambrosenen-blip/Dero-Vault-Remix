@@ -3,9 +3,13 @@ name: Build Windows Application
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -19,7 +23,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -48,12 +52,39 @@ jobs:
           fi
           echo "Windows build artifacts verified successfully."
 
-      - name: Upload Windows artifacts
+      - name: Upload Windows workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: DeroVault-Windows-x64
+          name: DeroVault-Windows-Installer-x64
           path: |
             release/*.exe
             release/*.zip
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish Installable Software to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Dero Vault v1.0.0 — Windows Desktop' }}
+          draft: false
+          prerelease: false
+          files: |
+            release/*.exe
+            release/*.zip
+          body: |
+            ## Dero Vault — Your Digital Granary
+            
+            ### Installable Software:
+            - **Windows 10/11 Installer**: [`DeroVault-Setup.exe`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}/DeroVault-Setup.exe) (Recommended: 1-click automatic install)
+            - **Windows Portable Archive**: [`DeroVault-Windows-x64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}/DeroVault-Windows-x64.zip) (No installation required)
+
+            ### What's Inside:
+            - Automated background USB drive backup detection.
+            - Hardware serial identification (independent of drive letters).
+            - SHA-256 integrity verification and version archiving.
+            - 100% offline, private, local-first operation.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

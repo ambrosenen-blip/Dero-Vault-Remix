@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Minus, Square, X, HardDrive, Bell } from 'lucide-react';
+import { Minus, Square, X, HardDrive, Bell, Download } from 'lucide-react';
 import { DeroGranaryEmblem } from './BrandLogo';
 
 interface WindowHeaderProps {
@@ -12,6 +12,7 @@ interface WindowHeaderProps {
   isAutoBackupActive: boolean;
   activeDrivesCount: number;
   isBackingUp: boolean;
+  onOpenDownloadModal?: () => void;
 }
 
 export const WindowHeader: React.FC<WindowHeaderProps> = ({
@@ -19,6 +20,7 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
   isAutoBackupActive,
   activeDrivesCount,
   isBackingUp,
+  onOpenDownloadModal,
 }) => {
   return (
     <header className="flex items-center justify-between px-3.5 py-2 bg-[#0D1B3D] border-b border-[#1E3466] text-slate-300 select-none text-xs">
@@ -72,6 +74,17 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
 
       {/* Right: Windows Controls */}
       <div className="flex items-center gap-1.5 -mr-1">
+        {onOpenDownloadModal && (
+          <button
+            onClick={onOpenDownloadModal}
+            title="Download Installable Windows Software (.exe)"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#F4A62A]/15 hover:bg-[#F4A62A]/25 text-[11px] text-[#F4A62A] font-semibold transition-colors border border-[#F4A62A]/40"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Download .exe</span>
+          </button>
+        )}
+
         <button
           onClick={onMinimizeToTray}
           title="Return to quiet background tray mode"

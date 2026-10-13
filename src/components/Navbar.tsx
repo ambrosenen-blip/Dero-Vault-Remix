@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { LayoutDashboard, HardDrive, FolderSync, History, Settings } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FolderSync, History, Settings, Download } from 'lucide-react';
 
 export type NavTab = 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings';
 
@@ -12,12 +12,14 @@ interface NavbarProps {
   currentTab: NavTab;
   onTabChange: (tab: NavTab) => void;
   registeredCount: number;
+  onOpenDownloadModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onTabChange,
   registeredCount,
+  onOpenDownloadModal,
 }) => {
   const tabs = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
@@ -28,9 +30,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <nav className="flex items-center justify-between px-6 py-2.5 bg-[#0A1530] border-b border-[#1E3466] text-sm">
+    <nav className="flex items-center justify-between px-6 py-2.5 bg-[#0A1530] border-b border-[#1E3466] text-sm gap-2">
       {/* Navigation links */}
-      <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
         {tabs.map((t) => {
           const Icon = t.icon;
           const isActive = currentTab === t.id;
@@ -50,6 +52,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           );
         })}
       </div>
+
+      {/* Right: Download Desktop App Button */}
+      {onOpenDownloadModal && (
+        <button
+          onClick={onOpenDownloadModal}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] transition-all shadow-sm font-['Poppins',sans-serif] whitespace-nowrap shrink-0"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>Download App (.exe)</span>
+        </button>
+      )}
     </nav>
   );
 };

@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Settings, Shield, FileText, Check, AlertCircle, RefreshCw, Terminal, Laptop } from 'lucide-react';
+import { Settings, Shield, FileText, Check, AlertCircle, RefreshCw, Terminal, Laptop, Download, ExternalLink } from 'lucide-react';
 import { AppLogEntry, AppSettings, PlatformInfo } from '../types';
 import { DeroGranaryEmblem } from './BrandLogo';
 
@@ -234,6 +234,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     : platformInfo?.supportStatusMessage || 'Architecture Supported'}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Desktop Application Installers & Packages */}
+          <div className="bg-[#0D1B3D] border border-[#1E3466] p-5 rounded-xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-sm font-semibold font-['Poppins',sans-serif] text-white flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-[#F4A62A]" />
+                  <span>Desktop Application Downloads (Windows 10 &amp; 11)</span>
+                </h3>
+                <p className="text-slate-300 text-xs mt-1 leading-relaxed">
+                  Download the installable application directly to your local PC.
+                </p>
+              </div>
+              <span className="text-[10px] font-bold text-[#00A884] bg-[#00A884]/15 px-2 py-0.5 rounded-full font-['Poppins',sans-serif]">
+                v1.0.0 Ready
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <a
+                href="/api/download/installer"
+                download="DeroVault-Setup.exe"
+                className="p-3.5 bg-[#081126] border border-[#1E3466] hover:border-[#F4A62A] rounded-xl flex items-center justify-between group transition-all"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Download className="w-4 h-4 text-[#F4A62A]" />
+                  <div>
+                    <div className="font-semibold text-white font-['Poppins',sans-serif]">DeroVault-Setup.exe</div>
+                    <div className="text-[11px] text-slate-400">Windows Installer (1-click)</div>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-[#F4A62A] group-hover:underline">Download</span>
+              </a>
+
+              <a
+                href="/api/download/windows-app"
+                download="DeroVault-v1.0.0-Windows-x64.zip"
+                className="p-3.5 bg-[#081126] border border-[#1E3466] hover:border-[#00A884] rounded-xl flex items-center justify-between group transition-all"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Download className="w-4 h-4 text-[#00A884]" />
+                  <div>
+                    <div className="font-semibold text-white font-['Poppins',sans-serif]">Portable ZIP Package</div>
+                    <div className="text-[11px] text-slate-400">Extract &amp; Run (~49 MB)</div>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-[#00A884] group-hover:underline">Download</span>
+              </a>
+            </div>
+
+            <div className="pt-2 border-t border-[#1E3466]/80 flex items-center justify-between text-[11px] text-slate-400">
+              <span>Looking for GitHub Releases or CI builds?</span>
+              <a
+                href="https://github.com/ambrosenen-blip/Dero-Vault-Remix/releases"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#F4A62A] hover:underline flex items-center gap-1 font-medium"
+              >
+                <span>GitHub Releases Page</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           </div>
 

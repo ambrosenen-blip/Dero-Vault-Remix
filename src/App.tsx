@@ -28,7 +28,8 @@ import { ReportModal } from './components/ReportModal';
 import { WelcomeModal } from './components/WelcomeModal';
 import { SystemTrayMenu } from './components/SystemTrayMenu';
 import { CompactTrayNotification, TrayNotificationState } from './components/CompactTrayNotification';
-import { Shield, HardDrive, Maximize2, Settings, History, CheckCircle2 } from 'lucide-react';
+import { DownloadModal } from './components/DownloadModal';
+import { Shield, HardDrive, Maximize2, Settings, History, CheckCircle2, Download } from 'lucide-react';
 import { DeroGranaryEmblem, DeroWordmark, DeroAppIcon } from './components/BrandLogo';
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
   const [registerModalDrive, setRegisterModalDrive] = useState<RemovableDrive | null>(null);
   const [selectedReportSession, setSelectedReportSession] = useState<BackupSession | null>(null);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
+  const [isDownloadOpen, setIsDownloadOpen] = useState(false);
 
   // TRAY-FIRST UX: Default to compact/tray mode
   const [isMinimizedToTray, setIsMinimizedToTray] = useState(true);
@@ -389,6 +391,7 @@ export default function App() {
         isAutoBackupActive={settings.autoBackup}
         activeDrivesCount={activeDrives.filter((d) => d.isConnected).length}
         isBackingUp={isBackingUp}
+        onOpenDownloadModal={() => setIsDownloadOpen(true)}
       />
 
       {/* Main Application Window (Expanded Secondary View) */}
@@ -399,6 +402,7 @@ export default function App() {
             currentTab={currentTab}
             onTabChange={setCurrentTab}
             registeredCount={registeredDrives.length}
+            onOpenDownloadModal={() => setIsDownloadOpen(true)}
           />
 
           {/* Tab Views */}
@@ -412,6 +416,7 @@ export default function App() {
                 onCancelBackup={handleCancelBackup}
                 onViewReport={(session) => setSelectedReportSession(session)}
                 onOpenRegisterModal={(drive) => setRegisterModalDrive(drive)}
+                onOpenDownloadModal={() => setIsDownloadOpen(true)}
               />
             )}
 
@@ -533,6 +538,14 @@ export default function App() {
               <Maximize2 className="w-3.5 h-3.5" />
               <span>Open Dero Vault Dashboard</span>
             </button>
+
+            <button
+              onClick={() => setIsDownloadOpen(true)}
+              className="px-5 py-2.5 text-xs font-semibold text-white bg-[#132247] hover:bg-[#1A2E5E] border border-[#1E3466] hover:border-[#F4A62A] rounded-xl transition-all flex items-center gap-2 font-['Poppins',sans-serif]"
+            >
+              <Download className="w-3.5 h-3.5 text-[#F4A62A]" />
+              <span>Download Desktop App (.exe)</span>
+            </button>
           </div>
         </div>
       )}
@@ -602,6 +615,12 @@ export default function App() {
           localStorage.setItem('dero_vault_welcome_shown', 'true');
           setIsWelcomeOpen(false);
         }}
+      />
+
+      {/* Modal 5: Download Installable Software Modal */}
+      <DownloadModal
+        isOpen={isDownloadOpen}
+        onClose={() => setIsDownloadOpen(false)}
       />
     </div>
   );
