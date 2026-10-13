@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <nav className="flex items-center justify-between px-6 py-2.5 bg-slate-900 border-b border-slate-800 text-sm">
+    <nav className="flex items-center justify-between px-6 py-2.5 bg-[#0A1530] border-b border-[#1E3466] text-sm">
       {/* Navigation links */}
       <div className="flex items-center gap-1 sm:gap-2">
         {tabs.map((t) => {
@@ -38,13 +38,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               key={t.id}
               onClick={() => onTabChange(t.id)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 isActive
-                  ? 'bg-slate-800 text-emerald-400 font-semibold shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                  ? 'bg-[#162852] text-[#F4A62A] font-semibold border border-[#1E3466] shadow-xs'
+                  : 'text-slate-300 hover:text-white hover:bg-[#112042]'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#F4A62A]' : 'text-slate-400'}`} />
               <span>{t.label}</span>
             </button>
           );

@@ -4,7 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { Shield, Play, Pause, Settings, X, Maximize2, HardDrive } from 'lucide-react';
+import { Play, Pause, Settings, X, Maximize2, HardDrive } from 'lucide-react';
+import { DeroGranaryEmblem } from './BrandLogo';
 
 interface SystemTrayMenuProps {
   isMinimized: boolean;
@@ -31,27 +32,25 @@ export const SystemTrayMenu: React.FC<SystemTrayMenuProps> = ({
     <div className="fixed bottom-3 right-4 z-50 select-none">
       {/* Tray Menu Popover */}
       {isOpen && (
-        <div className="absolute bottom-12 right-0 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 space-y-1">
-          <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+        <div className="absolute bottom-12 right-0 w-64 bg-[#0D1B3D] border border-[#1E3466] rounded-xl shadow-2xl p-2 text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 space-y-1">
+          <div className="px-3 py-2 border-b border-[#1E3466] flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <Shield className="w-3 h-3" />
-              </div>
-              <span className="font-bold text-slate-100">Dero Vault</span>
+              <DeroGranaryEmblem size={20} />
+              <span className="font-bold font-['Poppins',sans-serif] text-white">DERO VAULT</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-mono">Tray Mode</span>
+            <span className="text-[10px] text-[#F4A62A] font-medium">Tray Mode</span>
           </div>
 
           {/* Status line */}
-          <div className="px-3 py-1.5 text-[11px] text-slate-400">
+          <div className="px-3 py-1.5 text-[11px] text-slate-300">
             {isBackingUp ? (
-              <span className="text-amber-400 font-medium flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-[#F4A62A] font-medium flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#F4A62A] animate-pulse" />
                 Backing up to {activeDriveName || 'Drive'}...
               </span>
             ) : isAutoBackupActive ? (
-              <span className="text-emerald-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-[#00A884] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00A884]" />
                 Monitoring for USB drives
               </span>
             ) : (
@@ -59,30 +58,30 @@ export const SystemTrayMenu: React.FC<SystemTrayMenuProps> = ({
             )}
           </div>
 
-          <div className="pt-1 border-t border-slate-800/80 space-y-0.5">
+          <div className="pt-1 border-t border-[#1E3466] space-y-0.5">
             <button
               onClick={() => {
                 onRestore();
                 setIsOpen(false);
               }}
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 text-slate-100 flex items-center gap-2.5 transition-colors font-medium"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#162852] text-white flex items-center gap-2.5 transition-colors font-medium"
             >
-              <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+              <Maximize2 className="w-3.5 h-3.5 text-[#F4A62A]" />
               <span>Open Dero Vault</span>
             </button>
 
             <button
               onClick={onToggleAutoBackup}
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 text-slate-100 flex items-center gap-2.5 transition-colors"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#162852] text-slate-200 flex items-center gap-2.5 transition-colors"
             >
               {isAutoBackupActive ? (
                 <>
-                  <Pause className="w-3.5 h-3.5 text-amber-400" />
+                  <Pause className="w-3.5 h-3.5 text-[#F4A62A]" />
                   <span>Pause Automatic Backup</span>
                 </>
               ) : (
                 <>
-                  <Play className="w-3.5 h-3.5 text-emerald-400 fill-current" />
+                  <Play className="w-3.5 h-3.5 text-[#00A884] fill-current" />
                   <span>Resume Automatic Backup</span>
                 </>
               )}
@@ -93,7 +92,7 @@ export const SystemTrayMenu: React.FC<SystemTrayMenuProps> = ({
                 onOpenSettings();
                 setIsOpen(false);
               }}
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 text-slate-100 flex items-center gap-2.5 transition-colors"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#162852] text-slate-200 flex items-center gap-2.5 transition-colors"
             >
               <Settings className="w-3.5 h-3.5 text-slate-400" />
               <span>Settings</span>
@@ -130,22 +129,22 @@ export const SystemTrayMenu: React.FC<SystemTrayMenuProps> = ({
         title="Dero Vault — System Tray (Click for menu, double-click to open)"
         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md transition-all text-xs ${
           isBackingUp
-            ? 'bg-amber-950/80 border-amber-500/50 text-amber-200 animate-pulse'
+            ? 'bg-[#0D1B3D] border-[#F4A62A] text-[#F4A62A] animate-pulse'
             : isAutoBackupActive
-            ? 'bg-slate-900/95 border-slate-700/80 hover:border-slate-600 text-slate-200'
-            : 'bg-slate-900/95 border-slate-800 text-slate-400'
+            ? 'bg-[#0D1B3D] border-[#1E3466] hover:border-[#F4A62A]/60 text-slate-200'
+            : 'bg-[#0A1530] border-[#1E3466] text-slate-400'
         }`}
       >
-        <div className="relative">
-          <Shield className="w-4 h-4 text-emerald-400" />
+        <div className="relative flex items-center">
+          <DeroGranaryEmblem size={18} />
           <span
             className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ${
-              isBackingUp ? 'bg-amber-400' : isAutoBackupActive ? 'bg-emerald-400' : 'bg-slate-500'
+              isBackingUp ? 'bg-[#F4A62A]' : isAutoBackupActive ? 'bg-[#00A884]' : 'bg-slate-500'
             }`}
           />
         </div>
-        <span className="font-semibold hidden sm:inline">Dero Tray</span>
-        {isBackingUp && <span className="font-mono text-[10px]">Syncing...</span>}
+        <span className="font-['Poppins',sans-serif] font-bold text-xs hidden sm:inline text-white">DERO VAULT</span>
+        {isBackingUp && <span className="font-mono text-[10px] text-[#F4A62A]">Backing up...</span>}
       </button>
     </div>
   );

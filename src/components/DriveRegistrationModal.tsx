@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { HardDrive, Folder, Check, Plus, Trash2, X, Shield, ArrowRight, FolderSearch } from 'lucide-react';
 import { RemovableDrive } from '../types';
 import { ApiClient } from '../services/api';
+import { DeroGranaryEmblem } from './BrandLogo';
 
 interface DriveRegistrationModalProps {
   drive: RemovableDrive | null;
@@ -131,25 +132,25 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-200 overflow-y-auto">
-      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-6 text-slate-100 my-8">
+      <div className="w-full max-w-lg bg-[#0D1B3D] border border-[#1E3466] rounded-2xl shadow-2xl p-6 space-y-6 text-slate-100 my-8">
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+        <div className="flex items-start justify-between pb-4 border-b border-[#1E3466]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <Shield className="w-6 h-6" />
+            <div className="flex items-center justify-center">
+              <DeroGranaryEmblem size={34} />
             </div>
             <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#F4A62A] font-['Poppins',sans-serif]">
                 Granary Registration
               </span>
-              <h3 className="text-lg font-bold text-white mt-0.5">
+              <h3 className="text-lg font-bold font-['Poppins',sans-serif] text-white mt-0.5">
                 Register Storage Drive
               </h3>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-[#162852] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>

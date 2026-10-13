@@ -4,8 +4,9 @@
  */
 
 import React from 'react';
-import { HardDrive, ShieldAlert, ArrowRight, X } from 'lucide-react';
+import { HardDrive, ArrowRight, X } from 'lucide-react';
 import { RemovableDrive } from '../types';
+import { DeroGranaryEmblem } from './BrandLogo';
 
 interface UnregisteredDriveModalProps {
   drive: RemovableDrive | null;
@@ -29,62 +30,62 @@ export const UnregisteredDriveModal: React.FC<UnregisteredDriveModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-6 space-y-6 text-slate-100">
-        {/* Header with warning icon */}
-        <div className="flex items-start justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-[#0D1B3D] border border-[#1E3466] rounded-2xl shadow-2xl p-6 space-y-6 text-slate-100">
+        {/* Header with emblem */}
+        <div className="flex items-start justify-between pb-3 border-b border-[#1E3466]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
-              <HardDrive className="w-6 h-6" />
+            <div className="flex items-center justify-center">
+              <DeroGranaryEmblem size={34} />
             </div>
             <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#F4A62A] font-['Poppins',sans-serif]">
                 New Removable Storage
               </span>
-              <h3 className="text-lg font-bold text-white mt-0.5">
+              <h3 className="text-lg font-bold text-white font-['Poppins',sans-serif] mt-0.5">
                 Removable Drive Detected
               </h3>
             </div>
           </div>
           <button
             onClick={onIgnore}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-[#162852] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Drive Info Card matching Prompt Section 8 */}
-        <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2.5 text-xs">
-          <div className="flex justify-between items-center py-1 border-b border-slate-800/80">
+        <div className="bg-[#081126] border border-[#1E3466] rounded-xl p-4 space-y-2.5 text-xs font-['Inter',sans-serif]">
+          <div className="flex justify-between items-center py-1 border-b border-[#1E3466]/80">
             <span className="text-slate-400 font-medium">Drive:</span>
-            <span className="font-semibold text-slate-200">{drive.volumeLabel || 'Removable Disk'}</span>
+            <span className="font-semibold text-white font-['Poppins',sans-serif]">{drive.volumeLabel || 'Removable Disk'}</span>
           </div>
 
-          <div className="flex justify-between items-center py-1 border-b border-slate-800/80">
+          <div className="flex justify-between items-center py-1 border-b border-[#1E3466]/80">
             <span className="text-slate-400 font-medium">Drive letter:</span>
-            <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">
+            <span className="font-mono font-bold text-[#00A884] bg-[#00A884]/15 px-2 py-0.5 rounded border border-[#00A884]/30">
               {drive.driveLetter}
             </span>
           </div>
 
-          <div className="flex justify-between items-center py-1 border-b border-slate-800/80">
+          <div className="flex justify-between items-center py-1 border-b border-[#1E3466]/80">
             <span className="text-slate-400 font-medium">Hardware Model:</span>
             <span className="text-slate-300 truncate max-w-[200px]">{drive.deviceModel}</span>
           </div>
 
-          <div className="flex justify-between items-center py-1 border-b border-slate-800/80">
+          <div className="flex justify-between items-center py-1 border-b border-[#1E3466]/80">
             <span className="text-slate-400 font-medium">Capacity:</span>
             <span className="font-mono text-slate-200">{formatBytes(drive.totalBytes)}</span>
           </div>
 
           <div className="flex justify-between items-center py-1">
             <span className="text-slate-400 font-medium">Available:</span>
-            <span className="font-mono text-emerald-300 font-semibold">{formatBytes(drive.freeBytes)}</span>
+            <span className="font-mono text-[#00A884] font-semibold">{formatBytes(drive.freeBytes)}</span>
           </div>
         </div>
 
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-xs text-slate-300 leading-relaxed font-['Inter',sans-serif]">
           This drive has not been registered with Dero Vault. To protect your data, automatic backup will not begin until you register and configure what to protect.
         </p>
 
@@ -92,13 +93,13 @@ export const UnregisteredDriveModal: React.FC<UnregisteredDriveModalProps> = ({
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             onClick={onIgnore}
-            className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750 rounded-lg transition-colors"
+            className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white bg-[#132247] hover:bg-[#1A2E5E] rounded-lg transition-colors border border-[#1E3466]"
           >
             Ignore
           </button>
           <button
             onClick={() => onRegister(drive)}
-            className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-5 py-2 text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-[#F4A62A]/20 font-['Poppins',sans-serif]"
           >
             <span>Register Drive</span>
             <ArrowRight className="w-3.5 h-3.5" />

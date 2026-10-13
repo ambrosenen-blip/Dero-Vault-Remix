@@ -20,6 +20,7 @@ import {
   Play
 } from 'lucide-react';
 import { RemovableDrive, BackupSession, SourceFolderOption } from '../types';
+import { DeroGranaryEmblem } from './BrandLogo';
 
 export type TrayNotificationState =
   | {
@@ -148,7 +149,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
     <div
       role="region"
       aria-label="Dero Vault Tray Notification"
-      className="fixed bottom-14 right-4 z-50 w-96 max-w-[calc(100vw-2rem)] bg-slate-900/98 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-md text-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-200"
+      className="fixed bottom-14 right-4 z-50 w-96 max-w-[calc(100vw-2rem)] bg-[#0D1B3D]/98 border border-[#1E3466] rounded-2xl shadow-2xl backdrop-blur-md text-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-200"
     >
       {/* 1. UNREGISTERED DRIVE DETECTED: Inline Compact Registration */}
       {notification.type === 'unregistered' && (
@@ -156,13 +157,13 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
           {/* Header */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
-                <HardDrive className="w-4 h-4" />
+              <div className="flex items-center justify-center">
+                <DeroGranaryEmblem size={28} />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>Dero Vault</span>
-                  <span className="text-[10px] font-normal text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
+                <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white flex items-center gap-1.5">
+                  <span>DERO VAULT</span>
+                  <span className="text-[10px] font-normal text-[#F4A62A] bg-[#162852] px-1.5 py-0.2 rounded border border-[#1E3466]">
                     New Drive
                   </span>
                 </h4>
@@ -174,7 +175,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             <button
               onClick={onDismiss}
               title="Dismiss notification"
-              className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#162852] transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -188,7 +189,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
           <form onSubmit={handleRegisterSubmit} className="space-y-3 pt-1">
             {/* Friendly Name */}
             <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+              <label className="block text-[10px] font-semibold text-slate-300 uppercase tracking-wider mb-1 font-['Poppins',sans-serif]">
                 Drive Label in Dero Vault
               </label>
               <input
@@ -196,13 +197,13 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                 value={friendlyName}
                 onChange={(e) => setFriendlyName(e.target.value)}
                 placeholder="e.g. Office Backup"
-                className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-hidden"
+                className="w-full bg-[#081126] border border-[#1E3466] focus:border-[#F4A62A] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-hidden"
               />
             </div>
 
             {/* Quick Source Folder Pickers */}
             <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+              <label className="block text-[10px] font-semibold text-slate-300 uppercase tracking-wider mb-1 font-['Poppins',sans-serif]">
                 Folders to Protect ({selectedFolders.length} selected)
               </label>
               <div className="grid grid-cols-2 gap-1.5">
@@ -215,16 +216,16 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                       onClick={() => toggleFolder(source.path)}
                       className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-left text-xs transition-colors ${
                         isChecked
-                          ? 'bg-emerald-950/40 border-emerald-600/50 text-emerald-200'
-                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-400'
+                          ? 'bg-[#162852] border-[#F4A62A]/60 text-[#F4A62A]'
+                          : 'bg-[#081126] border-[#1E3466] hover:border-slate-700 text-slate-300'
                       }`}
                     >
                       <div
                         className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] ${
-                          isChecked ? 'bg-emerald-600 text-white' : 'border border-slate-700'
+                          isChecked ? 'bg-[#F4A62A] text-[#0D1B3D]' : 'border border-[#1E3466]'
                         }`}
                       >
-                        {isChecked && <Check className="w-2.5 h-2.5" />}
+                        {isChecked && <Check className="w-2.5 h-2.5 font-bold" />}
                       </div>
                       <span className="truncate">{source.name}</span>
                     </button>
@@ -239,17 +240,17 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                 type="checkbox"
                 checked={autoBackupEnabled}
                 onChange={(e) => setAutoBackupEnabled(e.target.checked)}
-                className="w-3.5 h-3.5 rounded bg-slate-950 border-slate-700 text-emerald-600 focus:ring-0"
+                className="w-3.5 h-3.5 rounded bg-[#081126] border-[#1E3466] text-[#F4A62A] focus:ring-0"
               />
               <span>Back up automatically when plugged in</span>
             </label>
 
             {/* Actions */}
-            <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+            <div className="flex items-center justify-between pt-1 border-t border-[#1E3466]">
               <button
                 type="button"
                 onClick={onDismiss}
-                className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                className="text-xs text-slate-400 hover:text-white transition-colors"
               >
                 Ignore
               </button>
@@ -257,14 +258,14 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                 <button
                   type="button"
                   onClick={onOpenFullApp}
-                  className="text-[11px] text-slate-400 hover:text-emerald-400 transition-colors"
+                  className="text-[11px] text-slate-300 hover:text-[#F4A62A] transition-colors"
                 >
                   Advanced...
                 </button>
                 <button
                   type="submit"
                   disabled={isRegistering || selectedFolders.length === 0}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 bg-[#F4A62A] hover:bg-[#F6B54A] disabled:bg-slate-800 disabled:text-slate-500 text-[#0D1B3D] text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1.5 font-['Poppins',sans-serif]"
                 >
                   {isRegistering ? (
                     <>
@@ -289,13 +290,13 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
-                <Shield className="w-4 h-4" />
+              <div className="flex items-center justify-center">
+                <DeroGranaryEmblem size={28} />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>Dero Vault</span>
-                  <span className="text-[10px] text-emerald-400">· Ready</span>
+                <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white flex items-center gap-1.5">
+                  <span>DERO VAULT</span>
+                  <span className="text-[10px] text-[#00A884]">· Ready</span>
                 </h4>
                 <p className="text-[11px] text-slate-300">
                   {notification.drive.friendlyName || notification.drive.volumeLabel} ({notification.drive.driveLetter})
@@ -304,7 +305,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             </div>
             <button
               onClick={onDismiss}
-              className="p-1 rounded text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1 rounded text-slate-400 hover:text-white transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -314,17 +315,17 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             Registered drive recognized. Automatic backup is starting quietly in the background.
           </p>
 
-          <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800">
-            <span className="text-[11px] text-emerald-400 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex items-center justify-between text-xs text-slate-300 pt-1 border-t border-[#1E3466]">
+            <span className="text-[11px] text-[#00A884] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00A884] animate-pulse" />
               You can continue working safely
             </span>
             <button
               onClick={onOpenFullApp}
-              className="hover:text-slate-200 flex items-center gap-1 text-[11px]"
+              className="hover:text-white flex items-center gap-1 text-[11px] text-slate-300"
             >
               <span>Open Dero</span>
-              <Maximize2 className="w-3 h-3" />
+              <Maximize2 className="w-3 h-3 text-[#F4A62A]" />
             </button>
           </div>
         </div>
@@ -343,7 +344,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
           session.status === 'scanning'
             ? 'Scanning source folders…'
             : session.status === 'comparing'
-            ? 'Comparing file versions…'
+            ? 'Comparing against granary…'
             : session.status === 'copying'
             ? 'Backing up your office…'
             : session.status === 'verifying'
@@ -354,13 +355,13 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                <div className="flex items-center justify-center">
+                  <DeroGranaryEmblem size={28} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-bold text-white">Dero Vault</h4>
-                    <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800/40">
+                    <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white">DERO VAULT</h4>
+                    <span className="text-[10px] font-mono font-bold text-[#F4A62A] bg-[#162852] px-1.5 py-0.2 rounded border border-[#1E3466]">
                       {Math.max(1, Math.min(100, percent))}%
                     </span>
                   </div>
@@ -374,29 +375,29 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                 <button
                   onClick={onOpenFullApp}
                   title="Expand full Dero Vault window"
-                  className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#162852] transition-colors"
                 >
-                  <Maximize2 className="w-3.5 h-3.5" />
+                  <Maximize2 className="w-3.5 h-3.5 text-[#F4A62A]" />
                 </button>
                 <button
                   onClick={onDismiss}
                   title="Minimize tray notification"
-                  className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#162852] transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
-            {/* Progress Bar */}
+            {/* Progress Bar with Brand Accent #F4A62A */}
             <div className="space-y-1.5">
-              <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+              <div className="w-full h-2 rounded-full bg-[#081126] overflow-hidden border border-[#1E3466]">
                 <div
-                  className="h-full bg-linear-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-[#F4A62A] to-[#FBBF24] transition-all duration-300"
                   style={{ width: `${Math.min(100, Math.max(3, percent))}%` }}
                 />
               </div>
-              <div className="flex justify-between items-center text-[10px] text-slate-400">
+              <div className="flex justify-between items-center text-[10px] text-slate-300 font-mono">
                 <span>
                   {session.filesCopied} / {session.filesScanned || session.filesCopied} files
                 </span>
@@ -407,9 +408,9 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             </div>
 
             {/* Calming Assistant Banner */}
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] text-slate-300">
-              <span className="text-emerald-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="bg-[#081126] border border-[#1E3466] rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] text-slate-300">
+              <span className="text-[#00A884] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00A884] animate-pulse" />
                 You can continue working without interruption
               </span>
               {onCancelBackup && (
@@ -431,12 +432,12 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
-                <CheckCircle2 className="w-4 h-4" />
+              <div className="p-1.5 rounded-lg bg-[#00A884]/15 border border-[#00A884]/30 text-[#00A884] flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-white">Dero Vault</h4>
-                <p className="text-[11px] font-semibold text-emerald-400">
+                <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white">DERO VAULT</h4>
+                <p className="text-[11px] font-semibold text-[#00A884]">
                   ✓ Today&apos;s work is safely backed up.
                 </p>
               </div>
@@ -444,29 +445,29 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             <button
               onClick={onDismiss}
               title="Dismiss"
-              className="p-1 rounded text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1 rounded text-slate-400 hover:text-white transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2.5 text-xs text-slate-300 space-y-1">
+          <div className="bg-[#081126] border border-[#1E3466] rounded-lg p-2.5 text-xs text-slate-300 space-y-1">
             <div className="flex justify-between text-[11px]">
               <span className="text-slate-400">Protected files:</span>
-              <span className="font-semibold text-slate-200">
+              <span className="font-semibold text-white">
                 {notification.session.filesCopied || notification.session.filesScanned || 0} files (
                 {formatBytes(notification.session.bytesTransferred || notification.session.bytesTotal || 0)})
               </span>
             </div>
             <div className="flex justify-between text-[11px]">
               <span className="text-slate-400">Destination:</span>
-              <span className="text-slate-200 truncate max-w-[180px]">
+              <span className="text-white truncate max-w-[180px]">
                 {notification.driveName || notification.session.driveName || 'External Drive'}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-xs">
+          <div className="flex items-center justify-between pt-1 border-t border-[#1E3466] text-xs">
             <span className="text-[10px] text-slate-400">
               Safe to disconnect or keep plugged in
             </span>
@@ -474,14 +475,14 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
               <button
                 type="button"
                 onClick={onDismiss}
-                className="px-2.5 py-1 text-[11px] text-slate-300 hover:text-white bg-slate-800 rounded transition-colors"
+                className="px-2.5 py-1 text-[11px] text-slate-300 hover:text-white bg-[#132247] rounded transition-colors"
               >
                 Dismiss
               </button>
               <button
                 type="button"
                 onClick={onOpenFullApp}
-                className="px-2.5 py-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 transition-colors"
+                className="px-2.5 py-1 text-[11px] text-[#F4A62A] hover:text-[#F6B54A] font-semibold flex items-center gap-1 transition-colors"
               >
                 <span>View Details</span>
                 <Maximize2 className="w-3 h-3" />
@@ -496,19 +497,19 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4" />
+              <div className="p-1.5 rounded-lg bg-[#F4A62A]/15 text-[#F4A62A] border border-[#F4A62A]/30 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-white">Dero Vault</h4>
-                <p className="text-[11px] font-semibold text-amber-400">
+                <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white">DERO VAULT</h4>
+                <p className="text-[11px] font-semibold text-[#F4A62A]">
                   {notification.title || 'Backup Notification'}
                 </p>
               </div>
             </div>
             <button
               onClick={onDismiss}
-              className="p-1 rounded text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1 rounded text-slate-400 hover:text-white transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -518,21 +519,21 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             {notification.message}
           </p>
 
-          <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-xs">
+          <div className="flex items-center justify-between pt-1 border-t border-[#1E3466] text-xs">
             <button
               type="button"
               onClick={onDismiss}
-              className="text-slate-400 hover:text-slate-200 text-[11px]"
+              className="text-slate-400 hover:text-white text-[11px]"
             >
               Dismiss
             </button>
             <button
               type="button"
               onClick={onOpenFullApp}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 bg-[#132247] hover:bg-[#1A2E5E] text-slate-100 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
             >
               <span>Open Dero Vault for Details</span>
-              <Maximize2 className="w-3.5 h-3.5" />
+              <Maximize2 className="w-3.5 h-3.5 text-[#F4A62A]" />
             </button>
           </div>
         </div>

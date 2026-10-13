@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { Minus, Square, X, HardDrive, Shield, Bell } from 'lucide-react';
+import { Minus, Square, X, HardDrive, Bell } from 'lucide-react';
+import { DeroGranaryEmblem } from './BrandLogo';
 
 interface WindowHeaderProps {
   onMinimizeToTray: () => void;
@@ -20,33 +21,37 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
   isBackingUp,
 }) => {
   return (
-    <header className="flex items-center justify-between px-3.5 py-2 bg-slate-900 border-b border-slate-800 text-slate-300 select-none text-xs">
+    <header className="flex items-center justify-between px-3.5 py-2 bg-[#0D1B3D] border-b border-[#1E3466] text-slate-300 select-none text-xs">
       {/* Left: Window title and brand */}
       <div className="flex items-center gap-2.5">
         {/* Granary Emblem */}
-        <div className="w-5 h-5 rounded bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-          <Shield className="w-3.5 h-3.5" />
+        <div className="relative flex items-center justify-center">
+          <DeroGranaryEmblem size={24} showGlow={true} />
         </div>
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-100 tracking-tight text-sm">Dero Vault</span>
-          <span className="text-slate-500 hidden sm:inline" aria-hidden="true">·</span>
-          <span className="text-slate-400 font-normal hidden sm:inline">Your digital granary</span>
+          <span className="font-['Poppins',sans-serif] font-bold text-white tracking-tight text-sm">
+            DERO VAULT
+          </span>
+          <span className="text-[#F4A62A]" aria-hidden="true">·</span>
+          <span className="text-slate-300 font-normal hidden sm:inline text-[11px]">
+            Your digital granary
+          </span>
         </div>
       </div>
 
       {/* Center: Live background status indicator */}
-      <div className="hidden md:flex items-center gap-3 text-slate-400 text-xs">
-        <div className="flex items-center gap-1.5">
+      <div className="hidden md:flex items-center gap-3 text-slate-300 text-xs">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#162852]/80 border border-[#1E3466]">
           <span
             className={`w-2 h-2 rounded-full ${
               isBackingUp
-                ? 'bg-amber-400 animate-pulse'
+                ? 'bg-[#F4A62A] animate-pulse'
                 : isAutoBackupActive
-                ? 'bg-emerald-400'
+                ? 'bg-[#00A884]'
                 : 'bg-slate-500'
             }`}
           />
-          <span>
+          <span className="text-[11px] font-medium">
             {isBackingUp
               ? 'Backup in progress...'
               : isAutoBackupActive
@@ -57,8 +62,8 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
         {activeDrivesCount > 0 && (
           <>
             <span className="text-slate-600" aria-hidden="true">·</span>
-            <div className="flex items-center gap-1 text-slate-300">
-              <HardDrive className="w-3 h-3 text-slate-400" />
+            <div className="flex items-center gap-1 text-slate-200">
+              <HardDrive className="w-3 h-3 text-[#F4A62A]" />
               <span>{activeDrivesCount} drive{activeDrivesCount > 1 ? 's' : ''} connected</span>
             </div>
           </>
@@ -70,29 +75,29 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
         <button
           onClick={onMinimizeToTray}
           title="Return to quiet background tray mode"
-          className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-750 text-[11px] text-slate-300 hover:text-emerald-300 transition-colors border border-slate-700/60"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#162852] hover:bg-[#1E3466] text-[11px] text-slate-200 hover:text-[#F4A62A] transition-colors border border-[#1E3466]"
         >
-          <Shield className="w-3 h-3 text-emerald-400" />
+          <DeroGranaryEmblem size={14} />
           <span className="hidden sm:inline">Minimize to Tray</span>
         </button>
 
         <button
           onClick={onMinimizeToTray}
           title="Minimize to System Tray"
-          className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-slate-200 transition-colors"
+          className="p-1.5 hover:bg-[#162852] rounded text-slate-400 hover:text-white transition-colors"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
         <button
           title="Maximize"
-          className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-slate-200 transition-colors"
+          className="p-1.5 hover:bg-[#162852] rounded text-slate-400 hover:text-white transition-colors"
         >
           <Square className="w-3 h-3" />
         </button>
         <button
           onClick={onMinimizeToTray}
           title="Close to Tray"
-          className="p-1.5 hover:bg-rose-900/40 hover:text-rose-300 rounded text-slate-400 transition-colors"
+          className="p-1.5 hover:bg-rose-950/60 hover:text-rose-300 rounded text-slate-400 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>

@@ -29,6 +29,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { SystemTrayMenu } from './components/SystemTrayMenu';
 import { CompactTrayNotification, TrayNotificationState } from './components/CompactTrayNotification';
 import { Shield, HardDrive, Maximize2, Settings, History, CheckCircle2 } from 'lucide-react';
+import { DeroGranaryEmblem, DeroWordmark, DeroAppIcon } from './components/BrandLogo';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -376,7 +377,7 @@ export default function App() {
     ['scanning', 'comparing', 'copying', 'verifying'].includes(currentSession.status);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-600/30 selection:text-emerald-200">
+    <div className="min-h-screen bg-[#0A142E] text-slate-100 flex flex-col font-['Inter',sans-serif] selection:bg-[#F4A62A] selection:text-[#0D1B3D]">
       {/* Windows 11 Title Bar */}
       <WindowHeader
         onMinimizeToTray={() => {
@@ -458,39 +459,46 @@ export default function App() {
           </main>
         </div>
       ) : (
-        /* DEFAULT EXPERIENCE: Quiet Background Office Assistant */
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6 max-w-xl mx-auto">
-          {/* Subtle Granary Emblem */}
-          <div className="w-20 h-20 rounded-3xl bg-slate-900 border border-slate-800/90 text-emerald-400 flex items-center justify-center shadow-xl relative">
-            <Shield className="w-10 h-10" />
+        /* DEFAULT EXPERIENCE: Quiet Background Office Assistant with Brand Identity */
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6 max-w-xl mx-auto relative overflow-hidden">
+          {/* Ambient background glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#F4A62A]/5 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Official Granary Emblem with Status Dot */}
+          <div className="relative group">
+            <div className="p-4 rounded-3xl bg-[#0D1B3D] border border-[#1E3466] shadow-2xl shadow-[#0D1B3D]/80">
+              <DeroGranaryEmblem size={100} showGlow={true} />
+            </div>
             <span
-              className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
-                isBackingUp ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+              className={`absolute top-2 right-2 w-3.5 h-3.5 rounded-full border-2 border-[#0D1B3D] ${
+                isBackingUp ? 'bg-[#F4A62A] animate-pulse' : 'bg-[#00A884]'
               }`}
             />
           </div>
 
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] text-emerald-400 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Quiet Office Assistant · Running in System Tray</span>
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#0D1B3D] border border-[#1E3466] text-xs text-[#00A884] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00A884] animate-pulse" />
+              <span>Quiet Digital Granary · Monitoring in System Tray</span>
             </div>
-            <h2 className="text-xl font-bold text-white tracking-tight">
-              Dero Vault is Protecting Your Work
-            </h2>
-            <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+
+            <div className="flex flex-col items-center">
+              <DeroWordmark variant="dark" size="lg" showTagline={true} />
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto pt-1 font-['Inter',sans-serif]">
               Plug in your registered USB drive at any time. Dero Vault automatically backs up your office files without interrupting your work.
             </p>
           </div>
 
-          {/* Live Status Indicators */}
+          {/* Live Status Indicators with Brand Palette */}
           <div className="w-full grid grid-cols-2 gap-3 max-w-md text-xs">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 text-left space-y-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-3.5 text-left space-y-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold font-['Poppins',sans-serif]">
                 Protected Storage
               </span>
-              <div className="flex items-center gap-2 text-slate-200 font-medium">
-                <HardDrive className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2 text-white font-medium">
+                <HardDrive className="w-4 h-4 text-[#F4A62A]" />
                 <span>
                   {registeredDrives.length} registered drive
                   {registeredDrives.length !== 1 ? 's' : ''}
@@ -498,12 +506,12 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 text-left space-y-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-3.5 text-left space-y-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold font-['Poppins',sans-serif]">
                 Auto-Backup Mode
               </span>
-              <div className="flex items-center gap-2 text-slate-200 font-medium">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2 text-white font-medium">
+                <CheckCircle2 className="w-4 h-4 text-[#00A884]" />
                 <span>
                   {settings.autoBackup ? 'Active on Connect' : 'Paused'}
                 </span>
@@ -520,9 +528,9 @@ export default function App() {
                   (window as any).electronAPI.expandWindow();
                 }
               }}
-              className="px-5 py-2.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-750 border border-slate-700/80 rounded-xl transition-all shadow-md flex items-center gap-2"
+              className="px-6 py-2.5 text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] rounded-xl transition-all shadow-md shadow-[#F4A62A]/20 flex items-center gap-2 font-['Poppins',sans-serif]"
             >
-              <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+              <Maximize2 className="w-3.5 h-3.5" />
               <span>Open Dero Vault Dashboard</span>
             </button>
           </div>

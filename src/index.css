@@ -1,1 +1,46 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Dero Vault Official Brand Palette */
+  --color-brand-primary: #0D1B3D;        /* Trust & Stability - Deep Midnight Navy */
+  --color-brand-primary-light: #162852;  /* Elevated Card / Panel Navy */
+  --color-brand-primary-border: #1E3466; /* Surface Border */
+  --color-brand-accent: #F4A62A;         /* Growth & Backup - Warm Amber Gold */
+  --color-brand-accent-hover: #F7B547;   /* Accent Button Hover */
+  --color-brand-granary: #8B5E3C;        /* Tradition & Heritage - Earthy Granary Brown */
+  --color-brand-granary-light: #A7734E;  /* Granary Light Accent */
+  --color-brand-bg: #E6EEF5;             /* Clean & Modern - Soft Cool Ice Tint */
+  --color-brand-success: #00A884;        /* Completed Backup - Emerald Teal Green */
+  --color-brand-success-hover: #02BE96;  /* Success Hover */
+}
+
+/* Custom utility classes */
+.font-poppins {
+  font-family: 'Poppins', sans-serif;
+}
+
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Modern clean scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #091329;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E3466;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #F4A62A;
+}

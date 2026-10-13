@@ -81,45 +81,99 @@ function crc32(buf) {
   return (crc ^ (-1)) >>> 0;
 }
 
-// Dero Granary Emblem Drawing Function
+// Dero Granary Emblem Drawing Function (Official Brand Style Guide)
 function drawGranaryEmblemSample(x, y, w, h) {
   const cx = w / 2;
   const cy = h / 2;
   const dx = (x - cx) / (w / 2);
   const dy = (y - cy) / (h / 2);
 
-  // Rounded squircle background
+  // Rounded squircle container
   const rCorner = 0.88;
-  const inSquircle = Math.pow(Math.abs(dx), 3.2) + Math.pow(Math.abs(dy), 3.2) < rCorner;
-
-  if (!inSquircle) {
+  const distSquircle = Math.pow(Math.abs(dx), 3.2) + Math.pow(Math.abs(dy), 3.2);
+  if (distSquircle > rCorner) {
     return [0, 0, 0, 0]; // Transparent
   }
 
-  // Granary Slate-Emerald Gradient Field
-  const t = y / h;
-  const bgR = Math.round(15 + t * 10);
-  const bgG = Math.round(23 + t * 25);
-  const bgB = Math.round(42 - t * 10);
-
-  // Shield Emblem geometry
-  const inShield = (Math.abs(dx) < 0.65) && (dy > -0.65) && (dy < 0.2 + (0.65 - Math.abs(dx)) * 0.9);
-
-  if (inShield) {
-    const isBorder = (Math.abs(dx) > 0.58) || (dy < -0.58) || (dy > (0.15 + (0.65 - Math.abs(dx)) * 0.88));
-    if (isBorder) {
-      return [16, 185, 129, 255]; // Emerald-500
-    }
-
-    // Inner granary woven slats / vault lines (normalized scaling)
-    const lineY = Math.floor((dy + 0.3125) / 0.078125);
-    if (lineY % 2 === 0 && dy > -0.4 && dy < 0.35 && Math.abs(dx) < 0.45) {
-      return [52, 211, 153, 255]; // Emerald-400
-    }
-
-    return [6, 78, 59, 255]; // Emerald-900
+  // Border highlight
+  const isOuterBorder = distSquircle > rCorner - 0.08;
+  if (isOuterBorder) {
+    return [30, 52, 102, 255]; // #1E3466
   }
 
+  // Deep Navy background (#0D1B3D -> #081126 gradient)
+  const bgGrad = (dy + 1) / 2;
+  const bgR = Math.round(13 * (1 - bgGrad) + 8 * bgGrad);
+  const bgG = Math.round(27 * (1 - bgGrad) + 17 * bgGrad);
+  const bgB = Math.round(61 * (1 - bgGrad) + 38 * bgGrad);
+
+  // 1. Cyclic Backup Arrows Arc (Circular orbit r ~ 0.62)
+  const distCenter = Math.sqrt(dx * dx + (dy + 0.05) * (dy + 0.05));
+  const inOrbitalRing = distCenter >= 0.52 && distCenter <= 0.64;
+  if (inOrbitalRing) {
+    // Top right / bottom left arc segments
+    const angle = Math.atan2(dy + 0.05, dx); // -PI to PI
+    // Upper arc: Mint/Emerald (#00A884 to #00E5FF)
+    if (angle > -2.8 && angle < -0.4) {
+      return [0, 168, 132, 255]; // #00A884
+    }
+    // Lower arc: Gold/Amber (#F4A62A)
+    if (angle > 0.4 && angle < 2.8) {
+      return [244, 166, 42, 255]; // #F4A62A
+    }
+  }
+
+  // 2. Conical Granary Thatch Roof (Triangle / cone in upper half)
+  // Apex around (0, -0.48), base extends from x: -0.38 to +0.38 at y: -0.12
+  if (dy >= -0.48 && dy <= -0.12) {
+    const roofProgress = (dy - (-0.48)) / (-0.12 - (-0.48)); // 0 at apex, 1 at base
+    const halfWidth = 0.06 + roofProgress * 0.36;
+    if (Math.abs(dx) <= halfWidth) {
+      // Thatch texture lines
+      const thatchStripe = Math.floor((dx + 0.5) * 24) % 2;
+      if (thatchStripe === 0) {
+        return [206, 132, 60, 255]; // Warm Thatch Golden Amber #CE843C
+      } else {
+        return [168, 98, 40, 255];  // Darker Thatch Ochre #A86228
+      }
+    }
+  }
+
+  // 3. Woven Granary Basket Base (Trapezoid / rounded cylinder in lower half)
+  // Extends from y: -0.10 to +0.38, width tapers slightly at base
+  if (dy >= -0.10 && dy <= 0.38) {
+    const basketProgress = (dy - (-0.10)) / 0.48; // 0 at top, 1 at bottom
+    const halfWidth = 0.34 - basketProgress * 0.06;
+    if (Math.abs(dx) <= halfWidth) {
+      // 4. Central Entrance / Drive Bay Door (Dark arched aperture)
+      const inDoor = Math.abs(dx) <= 0.12 && dy >= 0.10 && dy <= 0.36;
+      if (inDoor) {
+        // Modern external SSD drive resting at the entrance
+        const inSsd = Math.abs(dx) <= 0.09 && dy >= 0.18 && dy <= 0.34;
+        if (inSsd) {
+          // SSD glowing LED activity light
+          if (Math.abs(dx - 0.05) <= 0.02 && Math.abs(dy - 0.22) <= 0.02) {
+            return [0, 229, 255, 255]; // Glowing Cyan LED #00E5FF
+          }
+          // SSD casing (anodized aluminum slate)
+          return [45, 60, 80, 255];
+        }
+        return [10, 15, 28, 255]; // Dark inner doorway
+      }
+
+      // Basket weave pattern
+      const row = Math.floor((dy - (-0.10)) * 18);
+      const col = Math.floor((dx + 0.4) * 22);
+      const isWeaveLight = (row + col) % 2 === 0;
+      if (isWeaveLight) {
+        return [196, 125, 59, 255]; // Warm Basket Tan #C47D3B
+      } else {
+        return [148, 88, 38, 255];  // Shadow Weave #945826
+      }
+    }
+  }
+
+  // Return background navy
   return [bgR, bgG, bgB, 255];
 }
 
