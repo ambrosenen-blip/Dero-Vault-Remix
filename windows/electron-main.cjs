@@ -4,15 +4,26 @@
  * and exposes native Windows folder picker dialogs.
  */
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, Notification } = require('electron');
 const path = require('path');
 const http = require('http');
 const { fork } = require('child_process');
+
+// On Windows, setting AppUserModelId is required for Windows toast notifications to display correctly
+// and route click activation back to the application.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.derovault.app');
+}
 
 let mainWindow = null;
 let tray = null;
 let serverProcess = null;
 const SERVER_PORT = 3000;
+
+// State tracking for detected unregistered drives to support instant click-to-configure
+let lastUnregisteredDrive = null;
+let pendingRegistrationDrive = null;
+let updateTrayContextMenu = null;
 
 // Native folder picker IPC handler
 ipcMain.handle('dialog:browseFolder', async () => {
@@ -36,29 +47,33 @@ ipcMain.handle('window:minimizeToTray', () => {
 
 ipcMain.handle('window:expand', () => {
   if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('app:expand');
   }
 });
 
+ipcMain.handle('app:getPendingRegistrationDrive', () => {
+  console.log(`[IPC] [${new Date().toISOString()}] app:getPendingRegistrationDrive requested: ${pendingRegistrationDrive ? `${pendingRegistrationDrive.driveLetter} (${pendingRegistrationDrive.stableHardwareId || pendingRegistrationDrive.volumeLabel})` : 'null'}`);
+  return pendingRegistrationDrive;
+});
+
+ipcMain.handle('app:clearPendingRegistrationDrive', () => {
+  console.log(`[IPC] [${new Date().toISOString()}] app:clearPendingRegistrationDrive called`);
+  pendingRegistrationDrive = null;
+  return true;
+});
+
 ipcMain.handle('tray:notify', (_event, opts) => {
-  const { title = 'Dero Vault', content = '', type = 'info' } = opts || {};
-  if (tray) {
-    try {
-      tray.displayBalloon({
-        iconType: type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info',
-        title,
-        content,
-      });
-    } catch {}
-  }
+  showTrayNotification(opts);
 });
 
 ipcMain.handle('app:quit', () => {
   app.isQuitting = true;
   app.quit();
 });
+
 
 // Check if local server is already running
 function pingServer(port) {
@@ -139,23 +154,121 @@ function setTrayStatus(text) {
 let lastBalloonContent = '';
 let lastBalloonTime = 0;
 
+/**
+ * Opens and focuses the application window, expanding from tray and opening
+ * the Drive Registration/Configuration modal for the specified drive.
+ * Retains pending drive state if the renderer is still loading.
+ */
+function openRegistrationForDrive(drive) {
+  const targetDrive = drive || lastUnregisteredDrive;
+  console.log(`[MainAction] [${new Date().toISOString()}] openRegistrationForDrive invoked for drive: ${targetDrive ? `${targetDrive.driveLetter} (${targetDrive.stableHardwareId || targetDrive.volumeLabel})` : 'null'}`);
+
+  if (targetDrive) {
+    lastUnregisteredDrive = targetDrive;
+    pendingRegistrationDrive = targetDrive;
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.log(`[MainAction] Re-creating mainWindow because it was destroyed or null`);
+    createWindow();
+  }
+
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      console.log(`[MainAction] Restoring minimized mainWindow.`);
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+
+    const dispatchEvents = () => {
+      try {
+        console.log(`[MainAction] Dispatching app:expand and drive:open-registration to renderer for: ${targetDrive ? targetDrive.driveLetter : 'none'}`);
+        mainWindow.webContents.send('app:expand');
+        if (targetDrive) {
+          mainWindow.webContents.send('drive:open-registration', targetDrive);
+        }
+      } catch (err) {
+        console.error(`[MainAction] Error dispatching IPC events to renderer: ${err.message}`);
+      }
+    };
+
+    if (mainWindow.webContents.isLoading()) {
+      console.log(`[MainAction] Renderer is still loading. Queuing open-registration event on did-finish-load.`);
+      mainWindow.webContents.once('did-finish-load', () => {
+        dispatchEvents();
+      });
+    } else {
+      dispatchEvents();
+    }
+  }
+}
+
+/**
+ * Shows desktop notification using Electron Notification API (primary, full click support)
+ * with tray.displayBalloon as secondary fallback.
+ */
 function showTrayNotification(opts) {
-  if (!tray) return;
-  const { title = 'Dero Vault', content = '', type = 'info' } = opts || {};
+  const { title = 'Dero Vault', content = '', type = 'info', drive = null, onClick = null } = opts || {};
   const now = Date.now();
   if (content === lastBalloonContent && (now - lastBalloonTime) < 1500) {
-    return; // Prevent duplicate balloon spam
+    return; // Prevent duplicate notification spam
   }
   lastBalloonContent = content;
   lastBalloonTime = now;
-  try {
-    tray.displayBalloon({
-      iconType: type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info',
-      title,
-      content,
-    });
-  } catch (err) {
-    console.log(`[Tray] [${new Date().toISOString()}] displayBalloon failed: ${err.message}`);
+
+  const clickHandler = () => {
+    console.log(`[Notification] [${new Date().toISOString()}] Notification clicked by user: "${content}"`);
+    if (typeof onClick === 'function') {
+      onClick();
+    } else if (drive || lastUnregisteredDrive) {
+      openRegistrationForDrive(drive || lastUnregisteredDrive);
+    } else {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('app:expand');
+      }
+    }
+  };
+
+  // Primary: Native Windows Toast Notification via Electron Notification API with full click support
+  if (Notification && Notification.isSupported()) {
+    try {
+      const icoPath = path.join(__dirname, 'assets', 'icon.ico');
+      const pngPath = path.join(__dirname, 'assets', 'icon.png');
+      const fs = require('fs');
+      const iconPath = fs.existsSync(icoPath) ? icoPath : pngPath;
+
+      const notification = new Notification({
+        title,
+        body: content,
+        icon: iconPath,
+        urgency: type === 'error' ? 'critical' : 'normal',
+      });
+
+      notification.on('click', clickHandler);
+      notification.show();
+      console.log(`[Notification] [${new Date().toISOString()}] Native toast shown: "${content}" (click handler attached: true)`);
+      return;
+    } catch (notifErr) {
+      console.warn(`[Notification] Native Notification failed, falling back to tray balloon: ${notifErr.message}`);
+    }
+  }
+
+  // Fallback to tray balloon
+  if (tray) {
+    try {
+      tray.displayBalloon({
+        iconType: type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info',
+        title,
+        content,
+      });
+      console.log(`[Tray] [${new Date().toISOString()}] Tray balloon shown: "${content}"`);
+    } catch (err) {
+      console.log(`[Tray] [${new Date().toISOString()}] displayBalloon failed: ${err.message}`);
+    }
   }
 }
 
@@ -218,15 +331,17 @@ function handleBackendStateChange(eventType, data) {
       });
     } else {
       console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Setting UNREGISTERED terminal state.`);
+      lastUnregisteredDrive = drive;
+      pendingRegistrationDrive = drive;
       setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
       showTrayNotification({
         title: 'Dero Vault',
-        content: `New USB storage detected: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to protect.`,
+        content: `New removable storage: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to configure.`,
+        drive,
+        onClick: () => openRegistrationForDrive(drive),
       });
-      // Bring renderer window forward so user can register the drive
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        mainWindow.focus();
+      if (typeof updateTrayContextMenu === 'function') {
+        updateTrayContextMenu();
       }
     }
   } else if (eventType === 'drive:unregistered_detected' && data) {
@@ -234,14 +349,27 @@ function handleBackendStateChange(eventType, data) {
     if (drive.partial || drive.reason === 'detection-timeout') {
       return; // Handled above
     }
+    console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Storing as lastUnregisteredDrive.`);
+    lastUnregisteredDrive = drive;
+    pendingRegistrationDrive = drive;
     setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
     showTrayNotification({
       title: 'Dero Vault',
       content: `New removable storage: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to configure.`,
+      drive,
+      onClick: () => openRegistrationForDrive(drive),
     });
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
+    if (typeof updateTrayContextMenu === 'function') {
+      updateTrayContextMenu();
+    }
+  } else if (eventType === 'drive:registered' && data) {
+    if (lastUnregisteredDrive && (!data.stableHardwareId || lastUnregisteredDrive.stableHardwareId === data.stableHardwareId)) {
+      console.log(`[Main] Drive ${data.stableHardwareId} registered. Clearing lastUnregisteredDrive.`);
+      lastUnregisteredDrive = null;
+      pendingRegistrationDrive = null;
+      if (typeof updateTrayContextMenu === 'function') {
+        updateTrayContextMenu();
+      }
     }
   } else if (eventType === 'drive:ignored' && data) {
     const letter = data.driveLetter || 'drive';
@@ -258,6 +386,13 @@ function handleBackendStateChange(eventType, data) {
   } else if (eventType === 'drive:disconnected' && data) {
     const drive = data;
     console.log(`[Tray] [${new Date().toISOString()}] Storage device disconnected (${drive.driveLetter}). Setting Idle state.`);
+    if (lastUnregisteredDrive && (!drive.stableHardwareId || lastUnregisteredDrive.stableHardwareId === drive.stableHardwareId || lastUnregisteredDrive.driveLetter === drive.driveLetter)) {
+      lastUnregisteredDrive = null;
+      pendingRegistrationDrive = null;
+      if (typeof updateTrayContextMenu === 'function') {
+        updateTrayContextMenu();
+      }
+    }
     setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
   } else if (eventType === 'backup:start' && data) {
     setTrayStatus(`Dero Vault — Backing up ${data.driveName || 'removable drive'}...`);
@@ -271,6 +406,7 @@ function handleBackendStateChange(eventType, data) {
     });
   }
 }
+
 
 // Start embedded backend server
 async function ensureServerRunning() {
@@ -775,64 +911,86 @@ function createTray() {
 
   let isAutoBackupPaused = false;
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Open Dero Vault',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-          mainWindow.webContents.send('app:expand');
-        }
+  function updateContextMenu() {
+    if (!tray) return;
+
+    const items = [
+      {
+        label: 'Open Dero Vault',
+        click: () => {
+          if (lastUnregisteredDrive) {
+            openRegistrationForDrive(lastUnregisteredDrive);
+          } else if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('app:expand');
+          }
+        },
       },
-    },
-    {
-      label: isAutoBackupPaused ? 'Resume Automatic Backup' : 'Pause Automatic Backup',
-      click: (item) => {
-        isAutoBackupPaused = !isAutoBackupPaused;
-        item.label = isAutoBackupPaused ? 'Resume Automatic Backup' : 'Pause Automatic Backup';
-        console.log(`[Tray] Auto backup toggled to: ${isAutoBackupPaused ? 'PAUSED' : 'ACTIVE'}`);
+    ];
+
+    if (lastUnregisteredDrive) {
+      items.push({
+        label: `Configure USB Drive (${lastUnregisteredDrive.driveLetter})...`,
+        click: () => {
+          openRegistrationForDrive(lastUnregisteredDrive);
+        },
+      });
+    }
+
+    items.push(
+      {
+        label: isAutoBackupPaused ? 'Resume Automatic Backup' : 'Pause Automatic Backup',
+        click: (item) => {
+          isAutoBackupPaused = !isAutoBackupPaused;
+          item.label = isAutoBackupPaused ? 'Resume Automatic Backup' : 'Pause Automatic Backup';
+          console.log(`[Tray] Auto backup toggled to: ${isAutoBackupPaused ? 'PAUSED' : 'ACTIVE'}`);
+        },
       },
-    },
-    {
-      label: 'Settings',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-          mainWindow.webContents.send('app:navigate', 'settings');
-        }
+      {
+        label: 'Settings',
+        click: () => {
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('app:navigate', 'settings');
+          }
+        },
       },
-    },
-    {
-      label: 'Rescan Storage Drives',
-      click: async () => {
-        console.log(`[Tray] Manual rescan triggered from tray context menu.`);
-        setTrayStatus('Dero Vault — Scanning storage drives...');
-        // Auto-clear in < 300ms if scan is still pending
-        const autoClear = setTimeout(() => {
-          if (currentTrayTooltip === 'Dero Vault — Scanning storage drives...') {
+      {
+        label: 'Rescan Storage Drives',
+        click: async () => {
+          console.log(`[Tray] Manual rescan triggered from tray context menu.`);
+          setTrayStatus('Dero Vault — Scanning storage drives...');
+          const autoClear = setTimeout(() => {
+            if (currentTrayTooltip === 'Dero Vault — Scanning storage drives...') {
+              setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+            }
+          }, 250);
+          const res = await requestDriveRescan(SERVER_PORT, 'tray-menu-rescan');
+          clearTimeout(autoClear);
+          if (!res || res.count === 0) {
             setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
           }
-        }, 250);
-        const res = await requestDriveRescan(SERVER_PORT, 'tray-menu-rescan');
-        clearTimeout(autoClear);
-        if (!res || res.count === 0) {
-          setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
-        }
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: 'Exit Dero Vault',
-      click: () => {
-        app.isQuitting = true;
-        app.quit();
-      },
-    },
-  ]);
+      { type: 'separator' },
+      {
+        label: 'Exit Dero Vault',
+        click: () => {
+          app.isQuitting = true;
+          app.quit();
+        },
+      }
+    );
 
-  tray.setContextMenu(contextMenu);
+    tray.setContextMenu(Menu.buildFromTemplate(items));
+  }
+
+  updateTrayContextMenu = updateContextMenu;
+  updateContextMenu();
 
   tray.on('click', async () => {
     // If tray is in an error or prompt state, a single click triggers an immediate rescan
@@ -849,11 +1007,27 @@ function createTray() {
       if (!res || res.count === 0) {
         setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
       }
+      return;
+    }
+
+    // Required fallback: clicking the tray icon must open the application and (if unregistered drive present) open configuration for it
+    console.log(`[TrayAction] [${new Date().toISOString()}] Tray single-click. lastUnregisteredDrive=${lastUnregisteredDrive ? lastUnregisteredDrive.driveLetter : 'none'}`);
+    if (lastUnregisteredDrive) {
+      openRegistrationForDrive(lastUnregisteredDrive);
+    } else if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('app:expand');
     }
   });
 
   tray.on('double-click', () => {
-    if (mainWindow) {
+    console.log(`[TrayAction] [${new Date().toISOString()}] Tray double-clicked. lastUnregisteredDrive=${lastUnregisteredDrive ? lastUnregisteredDrive.driveLetter : 'none'}`);
+    if (lastUnregisteredDrive) {
+      openRegistrationForDrive(lastUnregisteredDrive);
+    } else if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
       mainWindow.webContents.send('app:expand');
@@ -861,14 +1035,18 @@ function createTray() {
   });
 
   tray.on('balloon-click', () => {
-    console.log(`[TrayAction] [${new Date().toISOString()}] Tray balloon clicked. Opening Dero Vault window.`);
-    if (mainWindow) {
+    console.log(`[TrayAction] [${new Date().toISOString()}] Tray balloon clicked. Opening configuration for drive.`);
+    if (lastUnregisteredDrive) {
+      openRegistrationForDrive(lastUnregisteredDrive);
+    } else if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
       mainWindow.webContents.send('app:expand');
     }
   });
 }
+
 
 // Single instance lock
 const gotTheLock = app.requestSingleInstanceLock();

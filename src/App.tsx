@@ -136,12 +136,64 @@ export default function App() {
 
     refreshAll();
 
+    const cleanups: (() => void)[] = [];
+
+    const handleOpenRegistration = (driveData: any) => {
+      console.log('[App] handleOpenRegistration invoked with driveData:', driveData);
+      setIsMinimizedToTray(false);
+      if (driveData) {
+        const fullDrive: RemovableDrive = {
+          id: driveData.id || driveData.stableHardwareId || `USB-HW-${(driveData.driveLetter || 'E').replace(/[^a-zA-Z]/g, '')}`,
+          stableHardwareId: driveData.stableHardwareId || `USB-HW-${(driveData.driveLetter || 'E').replace(/[^a-zA-Z]/g, '')}`,
+          volumeSerial: driveData.volumeSerial || '',
+          volumeLabel: driveData.volumeLabel || 'Removable Disk',
+          friendlyName: driveData.friendlyName || driveData.volumeLabel || 'USB Drive',
+          driveLetter: driveData.driveLetter || 'E:',
+          mountPath: driveData.mountPath || (driveData.driveLetter ? (driveData.driveLetter.endsWith('\\') ? driveData.driveLetter : `${driveData.driveLetter}\\`) : 'E:\\'),
+          totalBytes: driveData.totalBytes || driveData.totalSizeBytes || 0,
+          freeBytes: driveData.freeBytes || driveData.freeSpaceBytes || 0,
+          fileSystem: driveData.fileSystem || 'FAT32',
+          deviceModel: driveData.deviceModel || 'USB Storage',
+          isRemovable: true,
+          isRegistered: false,
+          isConnected: true,
+          isSystemDrive: false,
+        };
+
+        setUnregisteredModalDrive(null);
+        setRegisterModalDrive(fullDrive);
+        if ((window as any).electronAPI?.clearPendingRegistrationDrive) {
+          (window as any).electronAPI.clearPendingRegistrationDrive();
+        }
+      }
+    };
+
     // Listen for native Electron "app:expand" (e.g. from system tray double-click or Open menu)
     if ((window as any).electronAPI?.onExpand) {
-      const cleanup = (window as any).electronAPI.onExpand(() => {
+      const cleanupExpand = (window as any).electronAPI.onExpand(() => {
         setIsMinimizedToTray(false);
       });
-      return cleanup;
+      cleanups.push(cleanupExpand);
+    }
+
+    // Listen for native Electron "drive:open-registration" (from notification click or tray click)
+    if ((window as any).electronAPI?.onOpenRegistration) {
+      const cleanupReg = (window as any).electronAPI.onOpenRegistration((drive: any) => {
+        handleOpenRegistration(drive);
+      });
+      cleanups.push(cleanupReg);
+    }
+
+    // Check for pending registration drive that arrived before or during mount
+    if ((window as any).electronAPI?.getPendingRegistrationDrive) {
+      (window as any).electronAPI.getPendingRegistrationDrive().then((pendingDrive: any) => {
+        if (pendingDrive) {
+          console.log('[App] Consuming initial pendingRegistrationDrive:', pendingDrive);
+          handleOpenRegistration(pendingDrive);
+        }
+      }).catch((err: any) => {
+        console.warn('[App] Error querying getPendingRegistrationDrive:', err);
+      });
     }
 
     // Subscribe to SSE Real-Time events from server
@@ -252,9 +304,13 @@ export default function App() {
     });
 
     return () => {
+      cleanups.forEach((c) => {
+        try { c(); } catch {}
+      });
       unsubscribe();
       if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
     };
+
   }, []);
 
   const handleStartManualBackup = async (stableHardwareId?: string) => {
@@ -556,10 +612,14 @@ export default function App() {
         onDismiss={() => setTrayNotification(null)}
         onOpenFullApp={() => {
           setIsMinimizedToTray(false);
+          if (trayNotification?.type === 'unregistered' && trayNotification.drive) {
+            setRegisterModalDrive(trayNotification.drive);
+          }
           if ((window as any).electronAPI?.expandWindow) {
             (window as any).electronAPI.expandWindow();
           }
         }}
+
         onQuickRegister={handleQuickRegister}
         onCancelBackup={handleCancelBackup}
         availableSources={availableSources}

@@ -17,4 +17,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('app:expand', handler);
     return () => ipcRenderer.removeListener('app:expand', handler);
   },
+  onOpenRegistration: (callback) => {
+    const handler = (_event, drive) => callback(drive);
+    ipcRenderer.on('drive:open-registration', handler);
+    return () => ipcRenderer.removeListener('drive:open-registration', handler);
+  },
+  getPendingRegistrationDrive: () => ipcRenderer.invoke('app:getPendingRegistrationDrive'),
+  clearPendingRegistrationDrive: () => ipcRenderer.invoke('app:clearPendingRegistrationDrive'),
 });
+
