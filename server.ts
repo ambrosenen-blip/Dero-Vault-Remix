@@ -168,6 +168,115 @@ export async function createDeroVaultServer(customPort?: number) {
     }
   });
 
+  // Diagnostic endpoint to independently test physical drive detection boundaries
+  app.get('/api/diag/inspect-drive', async (req: Request, res: Response) => {
+    const rawLetter = (req.query.letter as string) || 'E';
+    const cleanLetter = rawLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    const rootPath = `${cleanLetter}:\\`;
+    const logs: string[] = [];
+    const log = (msg: string) => {
+      console.log(`[Diagnostic] ${msg}`);
+      logs.push(`[${new Date().toISOString()}] ${msg}`);
+    };
+
+    log(`Beginning independent diagnostic for drive ${cleanLetter}: (${rootPath})`);
+
+    // 1. Filesystem existence and accessibility
+    let fsExists = false;
+    let fsAccessible = false;
+    let fsError: string | null = null;
+    try {
+      fsExists = fs.existsSync(rootPath);
+      log(`Step 1 (Filesystem existsSync): ${fsExists}`);
+      if (fsExists) {
+        fs.accessSync(rootPath, fs.constants.R_OK);
+        fsAccessible = true;
+        log(`Step 1 (Filesystem accessSync R_OK): true`);
+      }
+    } catch (e: any) {
+      fsError = e.message;
+      log(`Step 1 (Filesystem error): ${e.message}`);
+    }
+
+    // 2. Direct fast-path call
+    const adapter = driveDetector.getPlatformAdapter();
+    let fastPathResult: any = null;
+    let fastPathElapsed = 0;
+    let fastPathError: string | null = null;
+    if (typeof (adapter as any).detectRemovableDriveFast === 'function') {
+      const startF = Date.now();
+      try {
+        fastPathResult = await (adapter as any).detectRemovableDriveFast(cleanLetter);
+        fastPathElapsed = Date.now() - startF;
+        log(`Step 2 (Fast-Path execution): elapsed=${fastPathElapsed}ms, result=${fastPathResult ? JSON.stringify(fastPathResult) : 'null'}`);
+      } catch (fErr: any) {
+        fastPathElapsed = Date.now() - startF;
+        fastPathError = fErr.message;
+        log(`Step 2 (Fast-Path error): ${fErr.message} in ${fastPathElapsed}ms`);
+      }
+    } else {
+      log(`Step 2 (Fast-Path): detectRemovableDriveFast not supported on adapter`);
+    }
+
+    // 3. Direct multi-tier adapter call
+    let multiTierResult: any = null;
+    let multiTierElapsed = 0;
+    let multiTierError: string | null = null;
+    try {
+      const startM = Date.now();
+      multiTierResult = await adapter.detectExternalDrives(cleanLetter);
+      multiTierElapsed = Date.now() - startM;
+      log(`Step 3 (Multi-Tier execution): elapsed=${multiTierElapsed}ms, count=${multiTierResult ? multiTierResult.length : 0}`);
+    } catch (mErr: any) {
+      multiTierError = mErr.message;
+      log(`Step 3 (Multi-Tier error): ${mErr.message}`);
+    }
+
+    // 4. Stable identity and registration status
+    const driveInfo = fastPathResult || (multiTierResult && multiTierResult[0]);
+    let classification = 'NONE_DETECTED';
+    let persistentIdentity: string | null = null;
+    if (driveInfo) {
+      persistentIdentity = driveInfo.stableHardwareId;
+      const registered = db.getRegisteredDriveByStableId(driveInfo.stableHardwareId);
+      classification = registered ? 'REGISTERED' : 'UNREGISTERED';
+      log(`Step 4 (Identity & Classification): identity=${persistentIdentity}, classification=${classification}`);
+    } else {
+      const sysLetter = (process.env.SystemDrive || 'C:').replace(/[^a-zA-Z]/g, '').toUpperCase();
+      if (cleanLetter === sysLetter) {
+        classification = 'IGNORED (System Drive)';
+      }
+      log(`Step 4 (Identity & Classification): classification=${classification}`);
+    }
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      testedDrive: `${cleanLetter}:`,
+      rootPath,
+      filesystem: {
+        exists: fsExists,
+        accessible: fsAccessible,
+        error: fsError,
+      },
+      fastPath: {
+        executed: typeof (adapter as any).detectRemovableDriveFast === 'function',
+        elapsedMs: fastPathElapsed,
+        result: fastPathResult,
+        error: fastPathError,
+      },
+      multiTier: {
+        elapsedMs: multiTierElapsed,
+        drives: multiTierResult,
+        error: multiTierError,
+      },
+      classification: {
+        persistentIdentity,
+        classification,
+      },
+      logs,
+    });
+  });
+
   app.get('/api/profiles', (_req: Request, res: Response) => {
     const profiles = db.getAllBackupProfiles();
     res.json({ profiles });

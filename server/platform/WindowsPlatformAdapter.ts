@@ -172,7 +172,7 @@ export class WindowsPlatformAdapter implements IPlatformAdapter {
     const startTime = Date.now();
     const cleanLetter = driveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
     if (!cleanLetter) return null;
-    const rootPath = `${cleanLetter}:\\\\`;
+    const rootPath = `${cleanLetter}:\\`;
     const systemDriveLetter = (process.env.SystemDrive || 'C:').replace(/[^a-zA-Z]/g, '').toUpperCase();
 
     console.log(`[Adapter] [${new Date().toISOString()}] fast-path started for ${cleanLetter}:`);

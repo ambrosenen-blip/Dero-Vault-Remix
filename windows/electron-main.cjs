@@ -661,37 +661,50 @@ function createWindow() {
         ? ('0x' + (lParam.length >= 8 ? lParam.readBigUInt64LE(0) : BigInt(lParam.readUInt32LE(0))).toString(16).toUpperCase())
         : (typeof lParam === 'bigint' ? '0x' + lParam.toString(16).toUpperCase() : (lParam || 0));
 
+      const eventTypeName = wParamNum === 0x8000
+        ? 'DBT_DEVICEARRIVAL (0x8000)'
+        : wParamNum === 0x8004
+        ? 'DBT_DEVICEREMOVECOMPLETE (0x8004)'
+        : wParamNum === 0x0007
+        ? 'DBT_DEVNODES_CHANGED (0x0007)'
+        : `OTHER (${hexWParam})`;
+
       const volumeInfo = decodeBroadcastLParam(lParam);
-      const volInfoStr = volumeInfo && volumeInfo.driveLetter
-        ? ` Volume: ${volumeInfo.driveLetter} (mask: 0x${volumeInfo.unitmask.toString(16).toUpperCase()})`
+      const decodedType = volumeInfo ? volumeInfo.deviceType : 'NULL/RAW';
+      const extractedLetter = volumeInfo && volumeInfo.driveLetter ? volumeInfo.driveLetter : null;
+      const volInfoStr = extractedLetter
+        ? ` Volume: ${extractedLetter} (mask: 0x${volumeInfo.unitmask.toString(16).toUpperCase()})`
         : '';
 
-      const driveLetterLogged = volumeInfo && volumeInfo.driveLetter ? volumeInfo.driveLetter : 'none';
-      console.log(`[Main] [${new Date().toISOString()}] WM_DEVICECHANGE received (wParam=${hexWParam}, lParam=${hexLParam}, drive letter=${driveLetterLogged})${volInfoStr}`);
+      console.log(`[NativeEvent] [${new Date().toISOString()}] WM_DEVICECHANGE event=${eventTypeName}, raw wParam=${hexWParam}, raw lParam=${hexLParam}, decodedType=${decodedType}, driveLetter=${extractedLetter || 'none'}${volInfoStr}`);
 
       // DBT_DEVICEARRIVAL (0x8000), DBT_DEVICEREMOVECOMPLETE (0x8004), DBT_DEVNODES_CHANGED (0x0007)
       if (wParamNum === 0x8000) {
-        const letter = volumeInfo && volumeInfo.driveLetter ? volumeInfo.driveLetter : null;
-        if (letter) {
-          console.log(`[Main] fast-path started for ${letter}`);
+        if (extractedLetter) {
+          console.log(`[Main] fast-path started for ${extractedLetter}`);
+          console.log(`[Main] [${new Date().toISOString()}] Proceeding with targeted fast-path handler for ${extractedLetter}`);
+        } else {
+          console.log(`[Main] [${new Date().toISOString()}] Device arrival received without drive letter (deviceType=${decodedType}). Proceeding with unhinted rescan.`);
         }
-        console.log(`[Main] [${new Date().toISOString()}] tray set to Detecting USB drive (${letter || 'device'})...`);
-        setTrayStatus(letter
-          ? `Dero Vault — Detecting USB drive (${letter})...`
+
+        console.log(`[Main] [${new Date().toISOString()}] tray set to Detecting USB drive (${extractedLetter || 'device'})...`);
+        setTrayStatus(extractedLetter
+          ? `Dero Vault — Detecting USB drive (${extractedLetter})...`
           : 'Dero Vault — Detecting USB drive...');
 
-        if (letter) {
+        if (extractedLetter) {
           // Ultra-fast path: immediately trigger targeted drive rescan (T+0ms)
           (async () => {
             const fastStart = Date.now();
-            console.log(`[Main] [${new Date().toISOString()}] Triggering immediate fast-path rescan for ${letter}`);
-            const res = await requestDriveRescan(SERVER_PORT, 'wm-devicechange-fast', letter);
+            console.log(`[Main] [${new Date().toISOString()}] Triggering immediate fast-path rescan for ${extractedLetter}`);
+            const res = await requestDriveRescan(SERVER_PORT, 'wm-devicechange-fast', extractedLetter);
             const elapsed = Date.now() - fastStart;
+            console.log(`[Main] [${new Date().toISOString()}] Fast-path HTTP response received: status=${res ? 200 : 'error'}, count=${res ? res.count : 0} in ${elapsed}ms`);
             if (res && res.count > 0 && Array.isArray(res.drives) && res.drives.length > 0) {
-              const clean = letter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+              const clean = extractedLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
               const matched = res.drives.find(d => d.driveLetter && d.driveLetter.toUpperCase().startsWith(clean)) || res.drives[0];
               if (matched && !matched.partial) {
-                console.log(`[Main] [${new Date().toISOString()}] Fast-path completed in ${elapsed}ms for ${letter}. Setting terminal state.`);
+                console.log(`[Main] [${new Date().toISOString()}] Fast-path completed in ${elapsed}ms for ${extractedLetter}. Setting terminal state.`);
                 if (matched.isRegistered) {
                   console.log(`[Tray] [${new Date().toISOString()}] Registered drive matched (${matched.driveLetter}). Setting REGISTERED terminal state.`);
                   setTrayStatus(`Dero Vault — Backing up ${matched.friendlyName || matched.volumeLabel} (${matched.driveLetter})...`);
@@ -703,15 +716,17 @@ function createWindow() {
               }
             }
             console.log(`[Main] [${new Date().toISOString()}] Fast-path did not immediately resolve in ${elapsed}ms. Scheduling bounded retries.`);
-            scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, letter);
+            scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, extractedLetter);
           })();
         } else {
           scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, null);
         }
       } else if (wParamNum === 0x8004) {
+        console.log(`[Main] [${new Date().toISOString()}] Device removal complete. Setting Idle state.`);
         setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
         scheduleExponentialBackoffRescan(`DBT_DEVICEREMOVECOMPLETE (0x8004)${volInfoStr}`, null);
       } else if (wParamNum === 0x0007) {
+        console.log(`[Main] [${new Date().toISOString()}] Devnodes changed. Scheduling non-hinted rescan.`);
         scheduleExponentialBackoffRescan('DBT_DEVNODES_CHANGED (0x0007)', null);
       }
       return true;
@@ -873,6 +888,24 @@ if (!gotTheLock) {
     createWindow();
     createTray();
     subscribeToBackendEvents();
+
+    // Reconcile pre-existing connected drives on application startup
+    console.log(`[Main] [${new Date().toISOString()}] Reconciling pre-existing connected drives on startup...`);
+    requestDriveRescan(SERVER_PORT, 'startup-initial-scan').then((res) => {
+      console.log(`[Main] [${new Date().toISOString()}] Startup drive scan completed: ${res ? res.count : 0} drive(s) found.`);
+      if (res && res.count > 0 && Array.isArray(res.drives) && res.drives.length > 0) {
+        const drive = res.drives[0];
+        if (drive.isRegistered) {
+          console.log(`[Tray] [${new Date().toISOString()}] Startup drive matched registered (${drive.driveLetter}). Setting REGISTERED state.`);
+          setTrayStatus(`Dero Vault — Backing up ${drive.friendlyName || drive.volumeLabel} (${drive.driveLetter})...`);
+        } else {
+          console.log(`[Tray] [${new Date().toISOString()}] Startup drive matched unregistered (${drive.driveLetter}). Setting UNREGISTERED state.`);
+          setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
+        }
+      }
+    }).catch((err) => {
+      console.log(`[Main] [${new Date().toISOString()}] Startup drive scan error: ${err.message}`);
+    });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
