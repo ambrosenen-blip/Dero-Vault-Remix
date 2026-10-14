@@ -45,7 +45,10 @@ export interface IPlatformAdapter {
   // Storage & paths
   getDefaultDataDirectory(): string;
   
-  // External drive detection
+  // Fast-path targeted drive letter detection (ultra-lightweight, hard <=400ms timeout)
+  detectRemovableDriveFast?(driveLetter: string): Promise<PlatformDriveInfo | null>;
+
+  // External drive detection (comprehensive multi-tier)
   detectExternalDrives(hintDriveLetter?: string): Promise<PlatformDriveInfo[]>;
   
   // Folder browsing & system locations

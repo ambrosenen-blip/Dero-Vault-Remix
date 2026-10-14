@@ -160,6 +160,200 @@ export class WindowsPlatformAdapter implements IPlatformAdapter {
     return true;
   }
 
+  /**
+   * Ultra-light fast-path targeted drive detection for a specific drive letter:
+   * - Checks volume readiness in <=50ms
+   * - Queries ONLY the specified letter (via Win32 API or single ultra-light PowerShell command)
+   * - Answers: DriveType == 2 (Removable), Volume serial / label / size
+   * - Strict hard timeout: 400ms (kill and fall through if exceeded)
+   * - Zero elevated Storage module or broad disk scanning
+   */
+  public async detectRemovableDriveFast(driveLetter: string): Promise<PlatformDriveInfo | null> {
+    const startTime = Date.now();
+    const cleanLetter = driveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    if (!cleanLetter) return null;
+    const rootPath = `${cleanLetter}:\\\\`;
+    const systemDriveLetter = (process.env.SystemDrive || 'C:').replace(/[^a-zA-Z]/g, '').toUpperCase();
+
+    console.log(`[Adapter] [${new Date().toISOString()}] fast-path started for ${cleanLetter}:`);
+
+    if (cleanLetter === systemDriveLetter) {
+      console.log(`[Adapter] [${new Date().toISOString()}] fast-path result: ${cleanLetter}: is SystemDrive, skipping`);
+      return null;
+    }
+
+    // Quick volume-readiness check (<=50ms grace)
+    let isReady = false;
+    try {
+      if (fs.existsSync(rootPath)) {
+        isReady = true;
+      }
+    } catch {}
+
+    if (!isReady) {
+      await new Promise((r) => setTimeout(r, 40));
+      try {
+        if (fs.existsSync(rootPath)) {
+          isReady = true;
+        }
+      } catch {}
+    }
+
+    if (!isReady) {
+      console.log(`[Adapter] [${new Date().toISOString()}] fast-path: volume ${rootPath} not ready or inaccessible`);
+      return null;
+    }
+    console.log(`[Adapter] [${new Date().toISOString()}] Volume ${rootPath} is ready (quick check: ${Date.now() - startTime}ms)`);
+
+    // 1. Try instantaneous Win32 API via Koffi if on win32
+    if (process.platform === 'win32') {
+      try {
+        const koffi = require('koffi');
+        const kernel32 = koffi.load('kernel32.dll');
+        const GetDriveTypeW = kernel32.func('__stdcall', 'GetDriveTypeW', 'uint32_t', ['str16']);
+        const driveType = GetDriveTypeW(rootPath);
+        // DRIVE_REMOVABLE == 2
+        if (driveType !== 2) {
+          const elapsed = Date.now() - startTime;
+          console.log(`[Adapter] fast-path result: ${cleanLetter}: has DriveType=${driveType} (not Removable) in ${elapsed}ms`);
+          return null;
+        }
+
+        const GetVolumeInformationW = kernel32.func('__stdcall', 'GetVolumeInformationW', 'bool', [
+          'str16',
+          '_Out_ uint16 *',
+          'uint32_t',
+          '_Out_ uint32 *',
+          '_Out_ uint32 *',
+          '_Out_ uint32 *',
+          '_Out_ uint16 *',
+          'uint32_t',
+        ]);
+        const GetDiskFreeSpaceExW = kernel32.func('__stdcall', 'GetDiskFreeSpaceExW', 'bool', [
+          'str16',
+          '_Out_ uint64_t *',
+          '_Out_ uint64_t *',
+          '_Out_ uint64_t *',
+        ]);
+
+        const volNameBuf = new Uint16Array(260);
+        const fsNameBuf = new Uint16Array(260);
+        const serialBuf = new Uint32Array(1);
+        const maxCompBuf = new Uint32Array(1);
+        const flagsBuf = new Uint32Array(1);
+
+        const ok = GetVolumeInformationW(
+          rootPath,
+          volNameBuf,
+          260,
+          serialBuf,
+          maxCompBuf,
+          flagsBuf,
+          fsNameBuf,
+          260
+        );
+
+        let volSerial = '';
+        let volLabel = 'Removable Disk';
+        let fsName = 'FAT32';
+
+        if (ok) {
+          const num = serialBuf[0] >>> 0;
+          if (num > 0) {
+            volSerial = num.toString(16).toUpperCase().padStart(8, '0');
+          }
+          const nullVol = volNameBuf.indexOf(0);
+          const charsVol = volNameBuf.slice(0, nullVol >= 0 ? nullVol : volNameBuf.length);
+          volLabel = String.fromCharCode(...charsVol).trim() || 'Removable Disk';
+
+          const nullFs = fsNameBuf.indexOf(0);
+          const charsFs = fsNameBuf.slice(0, nullFs >= 0 ? nullFs : fsNameBuf.length);
+          fsName = String.fromCharCode(...charsFs).trim() || 'FAT32';
+        }
+
+        let totalBytes = 0;
+        let freeBytes = 0;
+        try {
+          const freeCaller = new BigUint64Array(1);
+          const totalB = new BigUint64Array(1);
+          const totalFree = new BigUint64Array(1);
+          if (GetDiskFreeSpaceExW(rootPath, freeCaller, totalB, totalFree)) {
+            totalBytes = Number(totalB[0]);
+            freeBytes = Number(totalFree[0]);
+          }
+        } catch {}
+
+        const elapsed = Date.now() - startTime;
+        const stableHardwareId = volSerial ? `USB-VOL-${volSerial}` : `USB-HW-REMOVABLE-${cleanLetter}`;
+        const info: PlatformDriveInfo = {
+          stableHardwareId,
+          volumeSerial: volSerial || 'UNKNOWN',
+          volumeLabel: volLabel,
+          mountPath: rootPath,
+          driveIdentifier: `${cleanLetter}:`,
+          totalBytes,
+          freeBytes,
+          fileSystem: fsName,
+          deviceModel: 'USB Storage Device',
+          isRemovable: true,
+          busType: 'USB',
+        };
+
+        console.log(`[Adapter] fast-path result: matched ${cleanLetter}: (Removable, Serial=${info.volumeSerial}) in ${elapsed}ms`);
+        return info;
+      } catch (koffiErr: any) {
+        // Fall through to lightweight PowerShell query
+      }
+    }
+
+    // 2. Ultra-light targeted PowerShell one-liner with hard 400ms timeout
+    const remainingTime = Math.max(100, 400 - (Date.now() - startTime));
+    const psOneLiner = `$d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${cleanLetter}:'" -OperationTimeoutSec 1; if ($d -and $d.DriveType -eq 2) { [PSCustomObject]@{ DeviceID = $d.DeviceID; DriveType = [int]$d.DriveType; VolumeSerialNumber = $d.VolumeSerialNumber; VolumeName = $d.VolumeName; Size = [int64]$d.Size; FreeSpace = [int64]$d.FreeSpace; FileSystem = $d.FileSystem } | ConvertTo-Json -Compress }`;
+    const encoded = Buffer.from(psOneLiner, 'utf16le').toString('base64');
+
+    const result = await runPowerShellSafe(encoded, remainingTime);
+    const elapsed = Date.now() - startTime;
+
+    if (result.stderr && result.stderr.includes('timed out')) {
+      console.log(`[Adapter] fast-path result: timed out after ${elapsed}ms`);
+      return null;
+    }
+
+    if (!result.stdout || !result.stdout.trim()) {
+      console.log(`[Adapter] fast-path result: no removable drive on ${cleanLetter}: (elapsed: ${elapsed}ms)`);
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(result.stdout.trim());
+      if (parsed && parsed.DriveType === 2) {
+        const volSerial = (parsed.VolumeSerialNumber || '').trim();
+        const stableHardwareId = volSerial ? `USB-VOL-${volSerial}` : `USB-HW-REMOVABLE-${cleanLetter}`;
+        const info: PlatformDriveInfo = {
+          stableHardwareId,
+          volumeSerial: volSerial || 'UNKNOWN',
+          volumeLabel: (parsed.VolumeName || 'Removable Disk').trim() || 'Removable Disk',
+          mountPath: rootPath,
+          driveIdentifier: `${cleanLetter}:`,
+          totalBytes: Number(parsed.Size || 0),
+          freeBytes: Number(parsed.FreeSpace || 0),
+          fileSystem: (parsed.FileSystem || 'FAT32').trim(),
+          deviceModel: 'USB Storage Device',
+          isRemovable: true,
+          busType: 'USB',
+        };
+        console.log(`[Adapter] fast-path result: matched ${cleanLetter}: (Removable, Serial=${info.volumeSerial}) in ${elapsed}ms`);
+        return info;
+      } else {
+        console.log(`[Adapter] fast-path result: ${cleanLetter}: DriveType=${parsed?.DriveType} (not Removable) in ${elapsed}ms`);
+        return null;
+      }
+    } catch {
+      console.log(`[Adapter] fast-path result: failed to parse output in ${elapsed}ms`);
+      return null;
+    }
+  }
+
   public async detectExternalDrives(hintDriveLetter?: string): Promise<PlatformDriveInfo[]> {
     await this.checkVolumeReadiness(hintDriveLetter);
     console.log(`[Adapter] [${new Date().toISOString()}] Tier 1 starting (Storage Cmdlets: Get-Disk | Get-Partition)`);

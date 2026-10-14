@@ -147,37 +147,56 @@ export class DriveDetector extends EventEmitter {
   private async executeScan(hintDriveLetter?: string): Promise<RemovableDrive[]> {
     const detectedNow: Map<string, RemovableDrive> = new Map();
 
-    // 1. Query external drives via current operating system adapter
-    try {
-      const platformDrives = await this.platformAdapter.detectExternalDrives(hintDriveLetter);
-      for (const pd of platformDrives) {
-        const drive: RemovableDrive = {
-          id: `drv_${pd.stableHardwareId.replace(/[^a-zA-Z0-9_-]/g, '')}`,
-          stableHardwareId: pd.stableHardwareId,
-          volumeSerial: pd.volumeSerial,
-          volumeLabel: pd.volumeLabel,
-          driveLetter: pd.driveIdentifier,
-          mountPath: pd.mountPath,
-          totalBytes: pd.totalBytes,
-          freeBytes: pd.freeBytes,
-          fileSystem: pd.fileSystem,
-          deviceModel: pd.deviceModel,
-          physicalSerial: pd.physicalSerial,
-          pnpDeviceId: pd.pnpDeviceId,
-          busType: pd.busType || 'USB',
-          platform: this.platformAdapter.platform,
-          isRemovable: true,
-          isRegistered: false,
-          isConnected: true,
-          isSystemDrive: false,
-          lastConnectedAt: new Date().toISOString(),
-          partial: pd.partial,
-          reason: pd.reason,
-        };
-        detectedNow.set(drive.stableHardwareId, drive);
+    // 1. Fast-path first: If a specific drive letter was provided, attempt ultra-light fast path (<400ms)
+    let platformDrives: any[] = [];
+    if (hintDriveLetter && typeof (this.platformAdapter as any).detectRemovableDriveFast === 'function') {
+      try {
+        const fastResult = await (this.platformAdapter as any).detectRemovableDriveFast(hintDriveLetter);
+        if (fastResult) {
+          platformDrives = [fastResult];
+        }
+      } catch (err: any) {
+        console.warn(`[Adapter] [${new Date().toISOString()}] fast-path error: ${err.message}`);
       }
-    } catch (err: any) {
-      this.db.log('error', 'DriveDetector', `Platform drive detection failed: ${err.message}`);
+    }
+
+    // Only if fast path did not match or timed out, fall back to heavy multi-tier logic
+    if (platformDrives.length === 0) {
+      if (hintDriveLetter) {
+        console.log(`[Adapter] falling back to multi-tier`);
+      }
+      try {
+        platformDrives = await this.platformAdapter.detectExternalDrives(hintDriveLetter);
+      } catch (err: any) {
+        this.db.log('error', 'DriveDetector', `Platform drive detection failed: ${err.message}`);
+      }
+    }
+
+    for (const pd of platformDrives) {
+      const drive: RemovableDrive = {
+        id: `drv_${pd.stableHardwareId.replace(/[^a-zA-Z0-9_-]/g, '')}`,
+        stableHardwareId: pd.stableHardwareId,
+        volumeSerial: pd.volumeSerial,
+        volumeLabel: pd.volumeLabel,
+        driveLetter: pd.driveIdentifier,
+        mountPath: pd.mountPath,
+        totalBytes: pd.totalBytes,
+        freeBytes: pd.freeBytes,
+        fileSystem: pd.fileSystem,
+        deviceModel: pd.deviceModel,
+        physicalSerial: pd.physicalSerial,
+        pnpDeviceId: pd.pnpDeviceId,
+        busType: pd.busType || 'USB',
+        platform: this.platformAdapter.platform,
+        isRemovable: true,
+        isRegistered: false,
+        isConnected: true,
+        isSystemDrive: false,
+        lastConnectedAt: new Date().toISOString(),
+        partial: pd.partial,
+        reason: pd.reason,
+      };
+      detectedNow.set(drive.stableHardwareId, drive);
     }
 
     // If hint letter was checked and matches system drive, emit drive:ignored
@@ -185,6 +204,7 @@ export class DriveDetector extends EventEmitter {
       const cleanHint = hintDriveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
       const sysLetter = (process.env.SystemDrive || 'C:').replace(/[^a-zA-Z]/g, '').toUpperCase();
       if (cleanHint === sysLetter) {
+        console.log(`[Detector] classification: IGNORED for drive ${cleanHint}: (System Drive)`);
         console.log(`[Detector] [${new Date().toISOString()}] Hint letter ${hintDriveLetter} matches system drive. Emitting drive:ignored.`);
         this.emit('drive:ignored', { driveLetter: `${cleanHint}:`, reason: 'System Drive - not a backup target' });
       }
@@ -235,7 +255,7 @@ export class DriveDetector extends EventEmitter {
 
       if (isNewConnection) {
         const classification = drive.isRegistered ? 'REGISTERED' : 'UNREGISTERED';
-        console.log(`[Detector] [${new Date().toISOString()}] Classification result: ${classification} for drive ${drive.stableHardwareId} [${drive.driveLetter}] (${drive.volumeLabel || 'Removable'})`);
+        console.log(`[Detector] classification: ${classification} for drive ${drive.stableHardwareId} [${drive.driveLetter}] (${drive.volumeLabel || 'Removable'})`);
         console.log(`[Detector] [${new Date().toISOString()}] State transition: DISCONNECTED -> CONNECTED for drive ${drive.stableHardwareId} [${drive.driveLetter}] (${drive.volumeLabel || 'Removable'})`);
         this.db.log(
           'info',

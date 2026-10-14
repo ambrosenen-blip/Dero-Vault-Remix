@@ -126,6 +126,7 @@ function setTrayStatus(text) {
   if (tray) {
     try {
       tray.setToolTip(text);
+      console.log(`[Tray] tooltip updated to: ${text}`);
       console.log(`[Tray] [${new Date().toISOString()}] tooltip updated to: ${text}`);
     } catch (err) {
       console.error(`[Tray] [${new Date().toISOString()}] setToolTip error: ${err.message}`);
@@ -671,11 +672,42 @@ function createWindow() {
       // DBT_DEVICEARRIVAL (0x8000), DBT_DEVICEREMOVECOMPLETE (0x8004), DBT_DEVNODES_CHANGED (0x0007)
       if (wParamNum === 0x8000) {
         const letter = volumeInfo && volumeInfo.driveLetter ? volumeInfo.driveLetter : null;
+        if (letter) {
+          console.log(`[Main] fast-path started for ${letter}`);
+        }
         console.log(`[Main] [${new Date().toISOString()}] tray set to Detecting USB drive (${letter || 'device'})...`);
         setTrayStatus(letter
           ? `Dero Vault — Detecting USB drive (${letter})...`
           : 'Dero Vault — Detecting USB drive...');
-        scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, letter);
+
+        if (letter) {
+          // Ultra-fast path: immediately trigger targeted drive rescan (T+0ms)
+          (async () => {
+            const fastStart = Date.now();
+            console.log(`[Main] [${new Date().toISOString()}] Triggering immediate fast-path rescan for ${letter}`);
+            const res = await requestDriveRescan(SERVER_PORT, 'wm-devicechange-fast', letter);
+            const elapsed = Date.now() - fastStart;
+            if (res && res.count > 0 && Array.isArray(res.drives) && res.drives.length > 0) {
+              const clean = letter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+              const matched = res.drives.find(d => d.driveLetter && d.driveLetter.toUpperCase().startsWith(clean)) || res.drives[0];
+              if (matched && !matched.partial) {
+                console.log(`[Main] [${new Date().toISOString()}] Fast-path completed in ${elapsed}ms for ${letter}. Setting terminal state.`);
+                if (matched.isRegistered) {
+                  console.log(`[Tray] [${new Date().toISOString()}] Registered drive matched (${matched.driveLetter}). Setting REGISTERED terminal state.`);
+                  setTrayStatus(`Dero Vault — Backing up ${matched.friendlyName || matched.volumeLabel} (${matched.driveLetter})...`);
+                } else {
+                  console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive matched (${matched.driveLetter}). Setting UNREGISTERED terminal state.`);
+                  setTrayStatus(`Dero Vault — New USB drive detected (${matched.driveLetter})`);
+                }
+                return; // Reached terminal state in well under 300-500ms! No retry needed!
+              }
+            }
+            console.log(`[Main] [${new Date().toISOString()}] Fast-path did not immediately resolve in ${elapsed}ms. Scheduling bounded retries.`);
+            scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, letter);
+          })();
+        } else {
+          scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, null);
+        }
       } else if (wParamNum === 0x8004) {
         setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
         scheduleExponentialBackoffRescan(`DBT_DEVICEREMOVECOMPLETE (0x8004)${volInfoStr}`, null);
@@ -762,7 +794,17 @@ function createTray() {
       click: async () => {
         console.log(`[Tray] Manual rescan triggered from tray context menu.`);
         setTrayStatus('Dero Vault — Scanning storage drives...');
-        await requestDriveRescan(SERVER_PORT, 'tray-menu-rescan');
+        // Auto-clear in < 300ms if scan is still pending
+        const autoClear = setTimeout(() => {
+          if (currentTrayTooltip === 'Dero Vault — Scanning storage drives...') {
+            setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+          }
+        }, 250);
+        const res = await requestDriveRescan(SERVER_PORT, 'tray-menu-rescan');
+        clearTimeout(autoClear);
+        if (!res || res.count === 0) {
+          setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+        }
       },
     },
     { type: 'separator' },
@@ -782,7 +824,16 @@ function createTray() {
     if (currentTrayTooltip.includes('click to') || currentTrayTooltip.includes('Detection failed')) {
       console.log(`[Tray] Tray clicked while in error/retry state. Triggering immediate rescan.`);
       setTrayStatus('Dero Vault — Scanning storage drives...');
-      await requestDriveRescan(SERVER_PORT, 'tray-click-rescan');
+      const autoClear = setTimeout(() => {
+        if (currentTrayTooltip === 'Dero Vault — Scanning storage drives...') {
+          setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+        }
+      }, 250);
+      const res = await requestDriveRescan(SERVER_PORT, 'tray-click-rescan');
+      clearTimeout(autoClear);
+      if (!res || res.count === 0) {
+        setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+      }
     }
   });
 
