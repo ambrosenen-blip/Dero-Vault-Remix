@@ -18,9 +18,9 @@
   "main": "windows/electron-main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist-server/server.mjs --external:electron --external:vite",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs --external:electron --external:vite",
     "build:frontend": "vite build",
-    "build:server": "esbuild server.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist-server/server.mjs --external:electron --external:vite",
+    "build:server": "esbuild server.ts --bundle --platform=node --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs --external:electron --external:vite",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
     "package:win": "electron-builder --win --x64 --publish never",
     "package:mac": "electron-builder --mac --publish never",

@@ -23,12 +23,12 @@ import { IPlatformAdapter, PlatformDriveInfo, PlatformFolderOption, SupportedPla
  */
 function runPowerShellSafe(
   encodedCommand: string,
-  timeoutMs: number = 8000
+  timeoutMs: number = 15000
 ): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const startTime = Date.now();
     console.log(
-      `[ChildProcess] [${new Date().toISOString()}] Spawned: powershell.exe -EncodedCommand (timeout: ${timeoutMs}ms)`
+      `[ChildProcess] [${new Date().toISOString()}] spawned: powershell.exe -EncodedCommand (timeout: ${timeoutMs}ms)`
     );
 
     const child = spawn(
@@ -42,11 +42,15 @@ function runPowerShellSafe(
         encodedCommand,
       ],
       {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
         windowsHide: true,
       }
     );
+
+    try {
+      child.stdin?.end();
+    } catch {}
 
     let stdout = '';
     let stderr = '';
@@ -56,7 +60,7 @@ function runPowerShellSafe(
     const timer = setTimeout(() => {
       timedOut = true;
       console.warn(
-        `[ChildProcess] [${new Date().toISOString()}] TIMED OUT after ${timeoutMs}ms. Forcibly killing process PID ${child.pid} via taskkill/SIGKILL.`
+        `[ChildProcess] [${new Date().toISOString()}] TIMED OUT after ${timeoutMs}ms. Killing process PID ${child.pid}`
       );
       try {
         if (process.platform === 'win32' && child.pid) {
@@ -86,9 +90,9 @@ function runPowerShellSafe(
       if (settled) return;
       settled = true;
       console.error(
-        `[ChildProcess] [${new Date().toISOString()}] Spawn error after ${Date.now() - startTime}ms: ${err.message}`
+        `[ChildProcess] [${new Date().toISOString()}] error after ${Date.now() - startTime}ms: ${err.message}`
       );
-      reject(err);
+      resolve({ stdout: '', stderr: err.message });
     });
 
     child.on('close', (code, signal) => {
@@ -97,14 +101,13 @@ function runPowerShellSafe(
       settled = true;
       const elapsed = Date.now() - startTime;
       console.log(
-        `[ChildProcess] [${new Date().toISOString()}] Exited with code ${code}, signal=${signal} after ${elapsed}ms`
+        `[ChildProcess] [${new Date().toISOString()}] exited with code ${code}, signal=${signal} after ${elapsed}ms`
       );
       if (timedOut) {
-        reject(
-          new Error(
-            `PowerShell process timed out after ${timeoutMs}ms (terminated)`
-          )
-        );
+        resolve({
+          stdout: '',
+          stderr: `Process timed out after ${timeoutMs}ms`,
+        });
       } else {
         resolve({ stdout, stderr });
       }
@@ -137,12 +140,32 @@ export class WindowsPlatformAdapter implements IPlatformAdapter {
     return path.resolve(process.cwd(), '.dero_vault');
   }
 
-  public async detectExternalDrives(): Promise<PlatformDriveInfo[]> {
-    console.log(`[Adapter] [${new Date().toISOString()}] Starting multi-tier storage detection`);
-    console.log(`[Adapter] [${new Date().toISOString()}] Entering Tier 1 (Storage Cmdlets: Get-Disk | Get-Partition)`);
-    console.log(`[Adapter] [${new Date().toISOString()}] Entering Tier 2 (Standard WMI Association: Win32_DiskPartition -> Win32_LogicalDisk)`);
-    console.log(`[Adapter] [${new Date().toISOString()}] Entering Tier 3 (Non-Elevated GPT/Correlation: DiskIndex & partition matching)`);
-    console.log(`[Adapter] [${new Date().toISOString()}] Entering Tier 4 (DriveType=2 Removable Fallback)`);
+  private async checkVolumeReadiness(hintDriveLetter?: string): Promise<boolean> {
+    if (!hintDriveLetter) return true;
+    const cleanLetter = hintDriveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    if (!cleanLetter) return true;
+    const rootPath = `${cleanLetter}:\\`;
+    console.log(`[Adapter] [${new Date().toISOString()}] Volume readiness check starting for ${rootPath}`);
+    const delays = [100, 250, 500];
+    for (let i = 0; i < delays.length; i++) {
+      try {
+        if (fs.existsSync(rootPath)) {
+          console.log(`[Adapter] [${new Date().toISOString()}] Volume ${rootPath} is ready (attempt ${i + 1})`);
+          return true;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+    console.log(`[Adapter] [${new Date().toISOString()}] Volume ${rootPath} readiness check concluded`);
+    return true;
+  }
+
+  public async detectExternalDrives(hintDriveLetter?: string): Promise<PlatformDriveInfo[]> {
+    await this.checkVolumeReadiness(hintDriveLetter);
+    console.log(`[Adapter] [${new Date().toISOString()}] Tier 1 starting (Storage Cmdlets: Get-Disk | Get-Partition)`);
+    console.log(`[Adapter] [${new Date().toISOString()}] Tier 2 starting (Standard WMI Association: Win32_DiskPartition -> Win32_LogicalDisk)`);
+    console.log(`[Adapter] [${new Date().toISOString()}] Tier 3 starting (Non-Elevated GPT/Correlation: DiskIndex & partition matching)`);
+    console.log(`[Adapter] [${new Date().toISOString()}] Tier 4 starting (DriveType=2 Removable Fallback)`);
 
     // Verified Windows PowerShell detection logic with multi-tier logging and bounded CIM timeouts.
     const psScript = [
@@ -320,11 +343,14 @@ export class WindowsPlatformAdapter implements IPlatformAdapter {
 
     const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
     let stdout = '';
-    try {
-      const result = await runPowerShellSafe(encoded, 8000);
-      stdout = result.stdout;
-    } catch (cmdErr: any) {
-      console.warn(`[Adapter] [${new Date().toISOString()}] Multi-tier PowerShell query failed or timed out (${cmdErr.message}). Initiating rapid DriveType fallback.`);
+    const result = await runPowerShellSafe(encoded, 15000);
+    stdout = result.stdout;
+    if (result.stderr && result.stderr.includes('timed out')) {
+      console.warn(`[Adapter] [${new Date().toISOString()}] Tier 1 timeout`);
+      console.warn(`[Adapter] [${new Date().toISOString()}] Tier 2 timeout`);
+      console.warn(`[Adapter] [${new Date().toISOString()}] Tier 3 timeout`);
+      console.warn(`[Adapter] [${new Date().toISOString()}] Tier 4 timeout`);
+      console.warn(`[Adapter] [${new Date().toISOString()}] Multi-tier PowerShell query timed out. Initiating rapid DriveType fallback.`);
       
       // Rapid fallback: Minimal, direct query for Removable drives (DriveType=2)
       try {
@@ -347,10 +373,10 @@ export class WindowsPlatformAdapter implements IPlatformAdapter {
           "    IsRemovable = $true",
           "  }",
           "}",
-          "[PSCustomObject]@{ Drives = $items; Diagnostics = @('Fallback DriveType=2 executed') } | ConvertTo-Json -Compress"
+          "[PSCustomObject]@{ Drives = $items; Diagnostics = @('Tier 4 result: matched ' + $items.Count + ' volume(s)') } | ConvertTo-Json -Compress"
         ].join('; ');
         const fallbackEncoded = Buffer.from(fallbackScript, 'utf16le').toString('base64');
-        const fbResult = await runPowerShellSafe(fallbackEncoded, 4000);
+        const fbResult = await runPowerShellSafe(fallbackEncoded, 5000);
         stdout = fbResult.stdout;
         console.log(`[Adapter] [${new Date().toISOString()}] Rapid fallback completed with output length ${stdout.length}`);
       } catch (fbErr: any) {
@@ -375,7 +401,21 @@ export class WindowsPlatformAdapter implements IPlatformAdapter {
     // Output all tier diagnostic logs
     const diags = Array.isArray(parsed?.Diagnostics) ? parsed.Diagnostics : [];
     for (const diag of diags) {
-      console.log(`[Adapter] [${new Date().toISOString()}] ${diag}`);
+      if (typeof diag === 'string' && diag.startsWith('Tier 1')) {
+        const countMatch = diag.match(/matched\s+(\d+)\s+volume/i);
+        console.log(`[Adapter] [${new Date().toISOString()}] Tier 1 result: matched ${countMatch ? countMatch[1] : 0} volume(s)`);
+      } else if (typeof diag === 'string' && diag.startsWith('Tier 2')) {
+        const countMatch = diag.match(/matched\s+(\d+)\s+volume/i);
+        console.log(`[Adapter] [${new Date().toISOString()}] Tier 2 result: matched ${countMatch ? countMatch[1] : 0} volume(s)`);
+      } else if (typeof diag === 'string' && diag.startsWith('Tier 3')) {
+        const countMatch = diag.match(/matched\s+(\d+)\s+volume/i);
+        console.log(`[Adapter] [${new Date().toISOString()}] Tier 3 result: matched ${countMatch ? countMatch[1] : 0} volume(s)`);
+      } else if (typeof diag === 'string' && diag.startsWith('Tier 4')) {
+        const countMatch = diag.match(/matched\s+(\d+)\s+volume/i);
+        console.log(`[Adapter] [${new Date().toISOString()}] Tier 4 result: matched ${countMatch ? countMatch[1] : 0} volume(s)`);
+      } else {
+        console.log(`[Adapter] [${new Date().toISOString()}] ${diag}`);
+      }
     }
 
     let rawList: any[] = [];

@@ -63,18 +63,18 @@ export class DriveDetector extends EventEmitter {
   public async checkDrives(hintDriveLetter?: string): Promise<RemovableDrive[]> {
     const now = Date.now();
     console.log(
-      `[Detector] [${new Date().toISOString()}] Lock acquire attempted (hint: ${hintDriveLetter || 'none'})`
+      `[Detector] [${new Date().toISOString()}] lock acquire attempted (hint: ${hintDriveLetter || 'none'})`
     );
 
     if (this.inFlightScan) {
-      if (now - this.inFlightScanStartedAt > 10000) {
+      if (now - this.inFlightScanStartedAt > 25000) {
         console.warn(
-          `[Detector] [${new Date().toISOString()}] Lock held for >10s (${now - this.inFlightScanStartedAt}ms) — forcing release. Lock expired.`
+          `[Detector] [${new Date().toISOString()}] lock forced release (held for >25s). Lock expired.`
         );
         this.inFlightScan = null;
       } else {
         console.log(
-          `[Detector] [${new Date().toISOString()}] Lock already held (in-flight since ${now - this.inFlightScanStartedAt}ms ago). Coalescing.`
+          `[Detector] [${new Date().toISOString()}] lock already held (in-flight since ${now - this.inFlightScanStartedAt}ms ago). Coalescing.`
         );
         return this.inFlightScan;
       }
@@ -82,14 +82,14 @@ export class DriveDetector extends EventEmitter {
 
     this.inFlightScanStartedAt = Date.now();
     console.log(
-      `[Detector] [${new Date().toISOString()}] Lock acquired (hint: ${hintDriveLetter || 'none'})`
+      `[Detector] [${new Date().toISOString()}] lock acquired (hint: ${hintDriveLetter || 'none'})`
     );
 
-    // Hard 10-second bounded execution
+    // Hard 20-second bounded execution
     const hardTimeoutPromise = new Promise<RemovableDrive[]>((resolve) => {
       setTimeout(() => {
         console.warn(
-          `[Detector] [${new Date().toISOString()}] Detection pipeline hard timeout reached (10s). Triggering fallback.`
+          `[Detector] [${new Date().toISOString()}] Detection pipeline hard timeout reached (20s). Triggering fallback.`
         );
         if (hintDriveLetter) {
           const fallbackDrive = this.createPartialFallbackDrive(hintDriveLetter);
@@ -97,7 +97,7 @@ export class DriveDetector extends EventEmitter {
         } else {
           resolve(Array.from(this.activeDrives.values()));
         }
-      }, 10000);
+      }, 20000);
     });
 
     this.inFlightScan = Promise.race([
@@ -106,7 +106,7 @@ export class DriveDetector extends EventEmitter {
     ]).finally(() => {
       const elapsed = Date.now() - this.inFlightScanStartedAt;
       console.log(
-        `[Detector] [${new Date().toISOString()}] Lock released (elapsed: ${elapsed}ms)`
+        `[Detector] [${new Date().toISOString()}] lock release (elapsed: ${elapsed}ms)`
       );
       this.inFlightScan = null;
     });
@@ -149,7 +149,7 @@ export class DriveDetector extends EventEmitter {
 
     // 1. Query external drives via current operating system adapter
     try {
-      const platformDrives = await this.platformAdapter.detectExternalDrives();
+      const platformDrives = await this.platformAdapter.detectExternalDrives(hintDriveLetter);
       for (const pd of platformDrives) {
         const drive: RemovableDrive = {
           id: `drv_${pd.stableHardwareId.replace(/[^a-zA-Z0-9_-]/g, '')}`,
@@ -178,6 +178,16 @@ export class DriveDetector extends EventEmitter {
       }
     } catch (err: any) {
       this.db.log('error', 'DriveDetector', `Platform drive detection failed: ${err.message}`);
+    }
+
+    // If hint letter was checked and matches system drive, emit drive:ignored
+    if (hintDriveLetter && detectedNow.size === 0) {
+      const cleanHint = hintDriveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+      const sysLetter = (process.env.SystemDrive || 'C:').replace(/[^a-zA-Z]/g, '').toUpperCase();
+      if (cleanHint === sysLetter) {
+        console.log(`[Detector] [${new Date().toISOString()}] Hint letter ${hintDriveLetter} matches system drive. Emitting drive:ignored.`);
+        this.emit('drive:ignored', { driveLetter: `${cleanHint}:`, reason: 'System Drive - not a backup target' });
+      }
     }
 
     // Pipeline-level fallback: if adapter produced zero drives but hint letter is present

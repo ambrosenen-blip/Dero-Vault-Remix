@@ -78,7 +78,7 @@ function pingServer(port) {
 function requestDriveRescan(port, source = 'native-ipc', driveLetter = null) {
   return new Promise((resolve) => {
     const postData = JSON.stringify({ source, driveLetter });
-    console.log(`[Main] [${new Date().toISOString()}] Calling POST /api/drives/rescan (source: ${source}, driveLetter: ${driveLetter || 'none'})`);
+    console.log(`[Main] [${new Date().toISOString()}] calling rescan: POST /api/drives/rescan (source: ${source}, driveLetter: ${driveLetter || 'none'})`);
     const req = http.request({
       hostname: '127.0.0.1',
       port,
@@ -96,10 +96,10 @@ function requestDriveRescan(port, source = 'native-ipc', driveLetter = null) {
       res.on('end', () => {
         try {
           const parsed = JSON.parse(body);
-          console.log(`[Main] [${new Date().toISOString()}] Received rescan response: status=${res.statusCode}, count=${parsed.count ?? 0}`);
+          console.log(`[Main] [${new Date().toISOString()}] received response: status=${res.statusCode}, count=${parsed.count ?? 0}`);
           resolve(parsed);
         } catch {
-          console.log(`[Main] [${new Date().toISOString()}] Received non-JSON rescan response (status=${res.statusCode})`);
+          console.log(`[Main] [${new Date().toISOString()}] received response: non-JSON (status=${res.statusCode})`);
           resolve({ success: res.statusCode === 200, count: 0 });
         }
       });
@@ -116,6 +116,21 @@ function requestDriveRescan(port, source = 'native-ipc', driveLetter = null) {
     req.write(postData);
     req.end();
   });
+}
+
+// Track current tray tooltip state reliably (since tray.getToolTip is not an Electron API)
+let currentTrayTooltip = 'Dero Vault — Idle (Waiting for USB drive)';
+
+function setTrayStatus(text) {
+  currentTrayTooltip = text;
+  if (tray) {
+    try {
+      tray.setToolTip(text);
+      console.log(`[Tray] [${new Date().toISOString()}] tooltip updated to: ${text}`);
+    } catch (err) {
+      console.error(`[Tray] [${new Date().toISOString()}] setToolTip error: ${err.message}`);
+    }
+  }
 }
 
 // Subscribe Electron Main Process directly to Backend SSE Stream
@@ -178,82 +193,77 @@ function subscribeToBackendEvents() {
 }
 
 function handleBackendStateChange(eventType, data) {
-  console.log(`[Tray] [${new Date().toISOString()}] State change event received from backend: ${eventType}`);
+  console.log(`[Backend] [${new Date().toISOString()}] State change event received: ${eventType}`);
 
   if (eventType === 'drive:connected' && data) {
     const drive = data;
     if (drive.partial || drive.reason === 'detection-timeout') {
-      console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Partial classification for drive ${drive.driveLetter}. Setting error/rescan tooltip.`);
-      if (tray) {
-        tray.setToolTip(`Dero Vault — Detecting USB drive (${drive.driveLetter}) — could not classify. Click to rescan.`);
-        console.log(`[Tray] [${new Date().toISOString()}] Tray state updated: Detecting USB drive (${drive.driveLetter}) — could not classify. Click to rescan.`);
-      }
+      console.log(`[Tray] [${new Date().toISOString()}] Partial classification for drive ${drive.driveLetter}. Setting FAILED terminal state.`);
+      setTrayStatus(`Dero Vault — Detection failed for USB (${drive.driveLetter}) – click to retry`);
       showTrayNotification({
         title: 'Dero Vault',
-        content: `USB drive detected (${drive.driveLetter}), but full classification timed out. Click to rescan.`,
+        content: `USB drive detected (${drive.driveLetter}), but classification timed out. Click tray icon to retry.`,
+        type: 'warning',
       });
       return;
     }
 
     if (drive.isRegistered) {
-      console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Registered drive connected. Triggering auto-backup status notification.`);
-      if (tray) {
-        tray.setToolTip(`Dero Vault — Backing up ${drive.friendlyName || drive.volumeLabel} (${drive.driveLetter})...`);
-        console.log(`[Tray] [${new Date().toISOString()}] Tooltip updated to: Dero Vault — Backing up ${drive.friendlyName || drive.volumeLabel} (${drive.driveLetter})...`);
-      }
-      console.log(`[TrayAction] [${new Date().toISOString()}] Action executed: tray notification for registered drive connection.`);
+      console.log(`[Tray] [${new Date().toISOString()}] Registered drive connected (${drive.driveLetter}). Setting REGISTERED terminal state.`);
+      setTrayStatus(`Dero Vault — Backing up ${drive.friendlyName || drive.volumeLabel} (${drive.driveLetter})...`);
       showTrayNotification({
         title: 'Dero Vault',
         content: `Registered drive "${drive.friendlyName || drive.volumeLabel}" connected. Automatic backup starting.`,
       });
     } else {
-      console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Unregistered drive detected (${drive.driveLetter}). Showing registration prompt.`);
-      if (tray) {
-        tray.setToolTip(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
-        console.log(`[Tray] [${new Date().toISOString()}] Tooltip updated to: Dero Vault — New USB drive detected (${drive.driveLetter})`);
-      }
-      console.log(`[TrayAction] [${new Date().toISOString()}] Action executed: tray notification for unregistered drive.`);
+      console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Setting UNREGISTERED terminal state.`);
+      setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
       showTrayNotification({
         title: 'Dero Vault',
         content: `New USB storage detected: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to protect.`,
       });
+      // Bring renderer window forward so user can register the drive
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
     }
   } else if (eventType === 'drive:unregistered_detected' && data) {
     const drive = data;
     if (drive.partial || drive.reason === 'detection-timeout') {
-      return; // Already handled above in drive:connected
+      return; // Handled above
     }
-    console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Unregistered storage prompt confirmed.`);
-    if (tray) {
-      tray.setToolTip(`Dero Vault — Unregistered drive detected (${drive.driveLetter})`);
-      console.log(`[Tray] [${new Date().toISOString()}] Tray state updated: tooltip="Dero Vault — Unregistered drive detected (${drive.driveLetter})"`);
-    }
+    setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
     showTrayNotification({
       title: 'Dero Vault',
       content: `New removable storage: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to configure.`,
     });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  } else if (eventType === 'drive:ignored' && data) {
+    const letter = data.driveLetter || 'drive';
+    console.log(`[Tray] [${new Date().toISOString()}] Ignored device (${letter}): Setting IGNORED terminal state.`);
+    setTrayStatus(`Dero Vault — Not a backup target (${letter})`);
+    showTrayNotification({
+      title: 'Dero Vault',
+      content: `Storage device (${letter}) is not a backup target.`,
+      type: 'info',
+    });
+  } else if (eventType === 'drive:failed' && data) {
+    console.log(`[Tray] [${new Date().toISOString()}] Detection failed for device: Setting FAILED terminal state.`);
+    setTrayStatus('Dero Vault — Detection failed – click to retry');
   } else if (eventType === 'drive:disconnected' && data) {
     const drive = data;
-    console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Storage device disconnected (${drive.driveLetter}). Setting tooltip to Idle.`);
-    if (tray) {
-      tray.setToolTip('Dero Vault — Idle (Waiting for USB drive)');
-      console.log(`[Tray] [${new Date().toISOString()}] Tray state updated: Idle (Waiting for USB drive)`);
-    }
+    console.log(`[Tray] [${new Date().toISOString()}] Storage device disconnected (${drive.driveLetter}). Setting Idle state.`);
+    setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
   } else if (eventType === 'backup:start' && data) {
-    console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Backup session started.`);
-    if (tray) {
-      tray.setToolTip(`Dero Vault — Backing up ${data.driveName || 'removable drive'}...`);
-      console.log(`[Tray] [${new Date().toISOString()}] Tray state updated: Backing up ${data.driveName || 'removable drive'}...`);
-    }
+    setTrayStatus(`Dero Vault — Backing up ${data.driveName || 'removable drive'}...`);
   } else if (eventType === 'backup:update' && data) {
-    if (tray) tray.setToolTip(`Dero Vault — Backing up ${data.driveName}: ${data.filesProcessed}/${data.totalFiles} (${data.progress || 0}%)...`);
+    setTrayStatus(`Dero Vault — Backing up ${data.driveName}: ${data.filesProcessed}/${data.totalFiles} (${data.progress || 0}%)...`);
   } else if (eventType === 'backup:complete' && data) {
-    console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Backup session successfully completed.`);
-    if (tray) {
-      tray.setToolTip("Dero Vault — Today's work is safely backed up.");
-      console.log(`[Tray] [${new Date().toISOString()}] Tray state updated: Today's work is safely backed up.`);
-    }
-    console.log(`[TrayAction] [${new Date().toISOString()}] Action executed: backup completion notification toast.`);
+    setTrayStatus("Dero Vault — Today's work is safely backed up.");
     showTrayNotification({
       title: 'Dero Vault',
       content: "✓ Today's work is safely backed up.",
@@ -265,32 +275,78 @@ function handleBackendStateChange(eventType, data) {
 async function ensureServerRunning() {
   const isRunning = await pingServer(SERVER_PORT);
   if (isRunning) {
-    console.log('[Electron] Server already running on port', SERVER_PORT);
+    console.log(`[Main] [${new Date().toISOString()}] Server already running on port ${SERVER_PORT}`);
     return;
   }
 
   const serverScript = path.join(__dirname, '..', 'dist-server', 'server.mjs');
-  console.log('[Electron] Starting embedded Dero Vault server:', serverScript);
+  console.log(`[Main] [${new Date().toISOString()}] Starting embedded Dero Vault server: ${serverScript}`);
 
-  serverProcess = fork(serverScript, [], {
-    env: {
-      ...process.env,
-      PORT: String(SERVER_PORT),
-      NODE_ENV: 'production',
-    },
-    stdio: 'ignore',
-  });
+  try {
+    // Use process.execPath with ELECTRON_RUN_AS_NODE: '1' so Electron executes server.mjs as Node.js
+    serverProcess = fork(serverScript, [], {
+      execPath: process.execPath,
+      env: {
+        ...process.env,
+        PORT: String(SERVER_PORT),
+        NODE_ENV: 'production',
+        ELECTRON_RUN_AS_NODE: '1',
+        START_SERVER_IMMEDIATELY: 'true',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-  // Wait for server to become responsive
-  for (let i = 0; i < 30; i++) {
+    if (serverProcess.stdout) {
+      serverProcess.stdout.on('data', (data) => {
+        process.stdout.write(`[ServerOut] ${data}`);
+      });
+    }
+    if (serverProcess.stderr) {
+      serverProcess.stderr.on('data', (data) => {
+        process.stderr.write(`[ServerErr] ${data}`);
+      });
+    }
+    serverProcess.on('exit', (code, sig) => {
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server process exited with code ${code}, signal ${sig}`);
+    });
+  } catch (forkErr) {
+    console.warn(`[Main] [${new Date().toISOString()}] Fork failed: ${forkErr.message}. Falling back to in-process startup.`);
+  }
+
+  // Poll for child process response (up to 3 seconds)
+  for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 200));
     if (await pingServer(SERVER_PORT)) {
-      console.log('[Electron] Embedded server is ready.');
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server is ready on port ${SERVER_PORT}.`);
       return;
     }
   }
 
-  console.warn('[Electron] Server took longer than expected to report ready.');
+  // Fallback: Start server in-process via dynamic import
+  console.log(`[Main] [${new Date().toISOString()}] Child server not responding on port ${SERVER_PORT}. Attempting in-process startup...`);
+  try {
+    const { pathToFileURL } = require('url');
+    const serverModuleUrl = pathToFileURL(serverScript).href;
+    const serverModule = await import(serverModuleUrl);
+    if (serverModule && typeof serverModule.createDeroVaultServer === 'function') {
+      await serverModule.createDeroVaultServer(SERVER_PORT);
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started in-process on port ${SERVER_PORT}`);
+      return;
+    }
+  } catch (inProcErr) {
+    console.error(`[Main] [${new Date().toISOString()}] In-process server startup error: ${inProcErr.message}`);
+  }
+
+  // Final confirmation
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    if (await pingServer(SERVER_PORT)) {
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server is ready on port ${SERVER_PORT}.`);
+      return;
+    }
+  }
+
+  console.warn(`[Main] [${new Date().toISOString()}] Server took longer than expected to report ready on port ${SERVER_PORT}.`);
 }
 
 function createWindow() {
@@ -313,7 +369,60 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${SERVER_PORT}`);
+  const appUrl = `http://127.0.0.1:${SERVER_PORT}`;
+  console.log(`[Main] [${new Date().toISOString()}] Loading renderer from ${appUrl}`);
+
+  function loadLocalFallback() {
+    const fs = require('fs');
+    const localIndexCandidates = [
+      path.join(__dirname, '..', 'dist', 'index.html'),
+      path.join(process.cwd(), 'dist', 'index.html'),
+      path.join(app.getAppPath(), 'dist', 'index.html'),
+      ...(process.resourcesPath ? [
+        path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
+        path.join(process.resourcesPath, 'app', 'dist', 'index.html'),
+        path.join(process.resourcesPath, 'dist', 'index.html'),
+      ] : []),
+    ];
+    for (const p of localIndexCandidates) {
+      if (fs.existsSync(p)) {
+        console.log(`[Main] [${new Date().toISOString()}] Loading local fallback file: ${p}`);
+        mainWindow.loadFile(p);
+        return;
+      }
+    }
+    console.error(`[Main] [${new Date().toISOString()}] Could not find local index.html in any candidate location.`);
+    showTrayNotification({
+      title: 'Dero Vault',
+      content: 'Could not load UI: static build files not found.',
+      type: 'error',
+    });
+  }
+
+  mainWindow.loadURL(appUrl).catch((err) => {
+    console.error(`[Main] [${new Date().toISOString()}] Initial loadURL failed: ${err.message}. Attempting local file fallback...`);
+    loadLocalFallback();
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[Main] [${new Date().toISOString()}] did-fail-load: code=${errorCode}, description="${errorDescription}", url=${validatedURL}`);
+    showTrayNotification({
+      title: 'Dero Vault',
+      content: `Failed to load application interface (${errorDescription}). Retrying...`,
+      type: 'error',
+    });
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        pingServer(SERVER_PORT).then((alive) => {
+          if (alive) {
+            mainWindow.loadURL(appUrl);
+          } else {
+            loadLocalFallback();
+          }
+        });
+      }
+    }, 1500);
+  });
 
   // Windows-specific: Listen for native hardware arrival/removal events (WM_DEVICECHANGE: 0x0219).
   // Uses RegisterDeviceNotification for GUID_DEVINTERFACE_VOLUME and bounded retries to handle volume mounting.
@@ -472,15 +581,13 @@ function createWindow() {
       }
 
       // Hard 20-second watchdog: guaranteed terminal state fallback
-      if (hintDriveLetter && triggerReason.includes('ARRIVAL')) {
+      if (triggerReason.includes('ARRIVAL')) {
         detectionWatchdogTimer = setTimeout(() => {
-          if (tray) {
-            const currentTip = tray.getToolTip ? tray.getToolTip() : '';
-            if (currentTip.includes('Detecting USB drive')) {
-              console.warn(`[Main] [${new Date().toISOString()}] Detection watchdog fired (20s). Forcing terminal error state.`);
-              tray.setToolTip(`Dero Vault — Detection timed out for USB (${hintDriveLetter}) — click to retry.`);
-              console.log(`[Tray] [${new Date().toISOString()}] Tooltip updated to: Dero Vault — Detection timed out for USB (${hintDriveLetter}) — click to retry.`);
-            }
+          if (currentTrayTooltip.includes('Detecting USB drive')) {
+            console.warn(`[Main] [${new Date().toISOString()}] Detection watchdog fired (20s). Forcing terminal FAILED state.`);
+            setTrayStatus(hintDriveLetter
+              ? `Dero Vault — Detection failed for USB (${hintDriveLetter}) – click to retry`
+              : `Dero Vault — Detection failed – click to retry`);
           }
         }, 20000);
       }
@@ -499,16 +606,28 @@ function createWindow() {
               clearTimeout(detectionWatchdogTimer);
               detectionWatchdogTimer = null;
             }
+            // Check terminal state from returned drives
+            if (Array.isArray(res.drives) && res.drives.length > 0) {
+              const matched = res.drives.find(d => hintDriveLetter ? d.driveLetter.startsWith(hintDriveLetter.replace(':', '')) : true) || res.drives[0];
+              if (matched.isRegistered) {
+                console.log(`[Tray] [${new Date().toISOString()}] Registered drive matched (${matched.driveLetter}). Setting REGISTERED terminal state.`);
+                setTrayStatus(`Dero Vault — Backing up ${matched.friendlyName || matched.volumeLabel} (${matched.driveLetter})...`);
+              } else {
+                console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive matched (${matched.driveLetter}). Setting UNREGISTERED terminal state.`);
+                setTrayStatus(`Dero Vault — New USB drive detected (${matched.driveLetter})`);
+              }
+            }
           } else if (idx === delays.length - 1 && (!res || res.count === 0)) {
             console.log(`[Main] [${new Date().toISOString()}] Bounded retry sequence complete (~15s). Drive was never observed post-arrival.`);
             if (detectionWatchdogTimer) {
               clearTimeout(detectionWatchdogTimer);
               detectionWatchdogTimer = null;
             }
-            if (hintDriveLetter && tray) {
-              console.log(`[Tray] [${new Date().toISOString()}] Action decided: Classification timed out for drive ${hintDriveLetter}. Setting error/rescan state.`);
-              tray.setToolTip(`Dero Vault — Detection failed for USB (${hintDriveLetter}) — click to retry.`);
-              console.log(`[Tray] [${new Date().toISOString()}] Tooltip updated to: Dero Vault — Detection failed for USB (${hintDriveLetter}) — click to retry.`);
+            if (currentTrayTooltip.includes('Detecting USB drive')) {
+              console.log(`[Main] [${new Date().toISOString()}] Final retry completed with 0 drives. Setting FAILED terminal state.`);
+              setTrayStatus(hintDriveLetter
+                ? `Dero Vault — Detection failed for USB (${hintDriveLetter}) – click to retry`
+                : `Dero Vault — Detection failed – click to retry`);
             }
           }
         }, delay);
@@ -552,17 +671,13 @@ function createWindow() {
       // DBT_DEVICEARRIVAL (0x8000), DBT_DEVICEREMOVECOMPLETE (0x8004), DBT_DEVNODES_CHANGED (0x0007)
       if (wParamNum === 0x8000) {
         const letter = volumeInfo && volumeInfo.driveLetter ? volumeInfo.driveLetter : null;
-        if (letter && tray) {
-          tray.setToolTip(`Dero Vault — Detecting USB drive (${letter})...`);
-          console.log(`[Main] [${new Date().toISOString()}] Tray set to "Detecting USB drive (${letter})..."`);
-          console.log(`[Tray] [${new Date().toISOString()}] Tooltip updated to: Dero Vault — Detecting USB drive (${letter})...`);
-        }
+        console.log(`[Main] [${new Date().toISOString()}] tray set to Detecting USB drive (${letter || 'device'})...`);
+        setTrayStatus(letter
+          ? `Dero Vault — Detecting USB drive (${letter})...`
+          : 'Dero Vault — Detecting USB drive...');
         scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, letter);
       } else if (wParamNum === 0x8004) {
-        if (tray) {
-          tray.setToolTip('Dero Vault — Idle (Waiting for USB drive)');
-          console.log(`[Tray] [${new Date().toISOString()}] Tooltip updated to: Dero Vault — Idle (Waiting for USB drive)`);
-        }
+        setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
         scheduleExponentialBackoffRescan(`DBT_DEVICEREMOVECOMPLETE (0x8004)${volInfoStr}`, null);
       } else if (wParamNum === 0x0007) {
         scheduleExponentialBackoffRescan('DBT_DEVNODES_CHANGED (0x0007)', null);
@@ -609,7 +724,7 @@ function createTray() {
     return;
   }
 
-  tray.setToolTip('Dero Vault — Idle (Waiting for USB drive)');
+  setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
 
   let isAutoBackupPaused = false;
 
@@ -629,7 +744,7 @@ function createTray() {
       click: (item) => {
         isAutoBackupPaused = !isAutoBackupPaused;
         item.label = isAutoBackupPaused ? 'Resume Automatic Backup' : 'Pause Automatic Backup';
-        console.log(`[TrayAction] [${new Date().toISOString()}] Auto backup toggled to: ${isAutoBackupPaused ? 'PAUSED' : 'ACTIVE'}`);
+        console.log(`[Tray] Auto backup toggled to: ${isAutoBackupPaused ? 'PAUSED' : 'ACTIVE'}`);
       },
     },
     {
@@ -645,11 +760,8 @@ function createTray() {
     {
       label: 'Rescan Storage Drives',
       click: async () => {
-        console.log(`[TrayAction] [${new Date().toISOString()}] Action decided: Manual rescan triggered from tray context menu.`);
-        if (tray) {
-          tray.setToolTip('Dero Vault — Scanning storage drives...');
-          console.log(`[Tray] [${new Date().toISOString()}] Tray state updated: Scanning storage drives...`);
-        }
+        console.log(`[Tray] Manual rescan triggered from tray context menu.`);
+        setTrayStatus('Dero Vault — Scanning storage drives...');
         await requestDriveRescan(SERVER_PORT, 'tray-menu-rescan');
       },
     },
@@ -667,10 +779,9 @@ function createTray() {
 
   tray.on('click', async () => {
     // If tray is in an error or prompt state, a single click triggers an immediate rescan
-    const currentTip = tray.getToolTip ? tray.getToolTip() : '';
-    if (currentTip.includes('click to') || currentTip.includes('Detection failed')) {
-      console.log(`[TrayAction] [${new Date().toISOString()}] Tray clicked while in error/retry state. Triggering immediate rescan.`);
-      tray.setToolTip('Dero Vault — Scanning storage drives...');
+    if (currentTrayTooltip.includes('click to') || currentTrayTooltip.includes('Detection failed')) {
+      console.log(`[Tray] Tray clicked while in error/retry state. Triggering immediate rescan.`);
+      setTrayStatus('Dero Vault — Scanning storage drives...');
       await requestDriveRescan(SERVER_PORT, 'tray-click-rescan');
     }
   });

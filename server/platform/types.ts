@@ -46,7 +46,7 @@ export interface IPlatformAdapter {
   getDefaultDataDirectory(): string;
   
   // External drive detection
-  detectExternalDrives(): Promise<PlatformDriveInfo[]>;
+  detectExternalDrives(hintDriveLetter?: string): Promise<PlatformDriveInfo[]>;
   
   // Folder browsing & system locations
   browseForFolder(): Promise<string | null>;

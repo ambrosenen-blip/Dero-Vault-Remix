@@ -20,8 +20,15 @@ import { RemovableDrive } from './server/types.js';
 import { PlatformService } from './server/platform/index.js';
 
 const execAsync = promisify(exec);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const getModuleDir = () => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.url) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch {}
+  return process.cwd();
+};
+const __dirname = getModuleDir();
 
 export async function createDeroVaultServer(customPort?: number) {
   const app = express();
@@ -76,6 +83,10 @@ export async function createDeroVaultServer(customPort?: number) {
 
   driveDetector.on('drive:unregistered_detected', (drive: RemovableDrive) => {
     broadcastEvent('drive:unregistered_detected', drive);
+  });
+
+  driveDetector.on('drive:ignored', (data: any) => {
+    broadcastEvent('drive:ignored', data);
   });
 
   driveDetector.on('drive:disconnected', (drive: RemovableDrive) => {
@@ -138,13 +149,22 @@ export async function createDeroVaultServer(customPort?: number) {
     console.log(`[Backend] [${new Date().toISOString()}] /api/drives/rescan received for drive ${driveLetter || 'unspecified'} (source: ${source})`);
     const startT = Date.now();
     try {
-      const drives = await driveDetector.checkDrives(driveLetter);
+      // 20-second bounded timeout guarantee for the whole rescan operation
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Rescan overall timeout exceeded (20s)')), 20000)
+      );
+
+      const drives = await Promise.race([
+        driveDetector.checkDrives(driveLetter),
+        timeoutPromise,
+      ]);
+
       const registered = db.getRegisteredDrives();
       console.log(`[Backend] [${new Date().toISOString()}] Rescan completed in ${Date.now() - startT}ms. Total detected: ${drives.length} drive(s).`);
       res.json({ success: true, count: drives.length, drives, registered });
     } catch (err: any) {
       console.log(`[Backend] [${new Date().toISOString()}] Rescan failed after ${Date.now() - startT}ms: ${err.message}`);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err.message, success: false, count: 0 });
     }
   });
 
@@ -433,13 +453,35 @@ export async function createDeroVaultServer(customPort?: number) {
   });
 
   // --- Serve Static Frontend in Production / Vite Middleware in Dev ---
+  const resourcesPath = (process as any).resourcesPath;
+  const distCandidates = [
+    path.resolve(__dirname, 'dist'),
+    path.resolve(__dirname, '..', 'dist'),
+    path.resolve(process.cwd(), 'dist'),
+    ...(resourcesPath ? [
+      path.join(resourcesPath, 'app.asar', 'dist'),
+      path.join(resourcesPath, 'app', 'dist'),
+      path.join(resourcesPath, 'dist'),
+    ] : []),
+  ];
+  let distPath: string | null = null;
+  for (const cand of distCandidates) {
+    if (fs.existsSync(cand) && fs.existsSync(path.join(cand, 'index.html'))) {
+      distPath = cand;
+      break;
+    }
+  }
+
   if (process.env.NODE_ENV === 'production') {
-    const distPath = path.resolve(__dirname, 'dist');
-    if (fs.existsSync(distPath)) {
+    if (distPath) {
+      console.log(`[Backend] Serving static React frontend from: ${distPath}`);
       app.use(express.static(distPath));
-      app.get('*', (_req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
+      app.get('*', (_req, res, next) => {
+        if (_req.path.startsWith('/api/')) return next();
+        res.sendFile(path.join(distPath!, 'index.html'));
       });
+    } else {
+      console.warn(`[Backend] Production warning: dist/ directory not found in candidates: ${distCandidates.join(', ')}`);
     }
   } else {
     try {
@@ -450,11 +492,12 @@ export async function createDeroVaultServer(customPort?: number) {
       });
       app.use(vite.middlewares);
     } catch {
-      const distPath = path.resolve(__dirname, 'dist');
-      if (fs.existsSync(distPath)) {
+      if (distPath) {
+        console.log(`[Backend] Dev fallback: serving static frontend from: ${distPath}`);
         app.use(express.static(distPath));
-        app.get('*', (_req, res) => {
-          res.sendFile(path.join(distPath, 'index.html'));
+        app.get('*', (_req, res, next) => {
+          if (_req.path.startsWith('/api/')) return next();
+          res.sendFile(path.join(distPath!, 'index.html'));
         });
       }
     }
@@ -462,16 +505,24 @@ export async function createDeroVaultServer(customPort?: number) {
 
   return new Promise<http.Server>((resolve) => {
     server.listen(port, () => {
-      console.log(`[Dero Vault] Server running on port ${port} — Your digital granary.`);
+      console.log(`[Backend] [${new Date().toISOString()}] Server running on port ${port} — Your digital granary.`);
       resolve(server);
     });
   });
 }
 
-// Start server if executed directly
-if (process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.js'))) {
+// Start server if executed directly (supports server.ts, server.js, and bundled server.mjs)
+const scriptName = process.argv[1] || '';
+const isDirectRun =
+  scriptName.endsWith('server.ts') ||
+  scriptName.endsWith('server.js') ||
+  scriptName.endsWith('server.mjs') ||
+  scriptName.endsWith('server.cjs') ||
+  process.env.START_SERVER_IMMEDIATELY === 'true';
+
+if (isDirectRun) {
   createDeroVaultServer().catch((err) => {
-    console.error('[Dero Vault] Fatal server error:', err);
+    console.error('[Backend] Fatal server startup error:', err);
     process.exit(1);
   });
 }
