@@ -24,5 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getPendingRegistrationDrive: () => ipcRenderer.invoke('app:getPendingRegistrationDrive'),
   clearPendingRegistrationDrive: () => ipcRenderer.invoke('app:clearPendingRegistrationDrive'),
+  dismissRegistration: (stableHardwareId) => ipcRenderer.invoke('app:dismissRegistration', stableHardwareId),
 });
+
 

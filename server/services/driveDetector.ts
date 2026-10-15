@@ -220,10 +220,29 @@ export class DriveDetector extends EventEmitter {
     }
 
     // 2. State reconciliation and event emission
-    const currentActiveStableIds = new Set(detectedNow.keys());
+    // Match identity continuity: if a drive in detectedNow matches an existing active drive
+    // by volumeSerial or driveLetter, preserve the existing stableHardwareId.
+    const reconciledDrives = new Map<string, RemovableDrive>();
+    for (const [stableId, drive] of detectedNow.entries()) {
+      let finalStableId = stableId;
+      for (const [existingId, existingDrive] of this.activeDrives.entries()) {
+        if (
+          (drive.volumeSerial && drive.volumeSerial !== 'UNKNOWN' && existingDrive.volumeSerial === drive.volumeSerial) ||
+          (drive.driveLetter && existingDrive.driveLetter === drive.driveLetter)
+        ) {
+          finalStableId = existingId;
+          drive.stableHardwareId = existingId;
+          drive.id = existingDrive.id;
+          break;
+        }
+      }
+      reconciledDrives.set(finalStableId, drive);
+    }
+
+    const currentActiveStableIds = new Set(reconciledDrives.keys());
 
     // Check newly connected or updated drives
-    for (const [stableId, drive] of detectedNow.entries()) {
+    for (const [stableId, drive] of reconciledDrives.entries()) {
       const previous = this.activeDrives.get(stableId);
       const isNewConnection = !previous || !previous.isConnected;
 
@@ -270,19 +289,39 @@ export class DriveDetector extends EventEmitter {
       }
     }
 
-    // Check disconnected drives
+    // Check disconnected drives with physical existence verification
     for (const [stableId, drive] of this.activeDrives.entries()) {
-      if (!currentActiveStableIds.has(stableId) && drive.isConnected) {
-        drive.isConnected = false;
-        console.log(`[Detector] [${new Date().toISOString()}] State transition: CONNECTED -> DISCONNECTED for drive ${drive.stableHardwareId} [${drive.driveLetter}]`);
-        this.db.log(
-          'warn',
-          'DriveDetector',
-          `Storage device disconnected: ${drive.friendlyName || drive.volumeLabel || 'Disk'} [${drive.driveLetter}] (${stableId})`
-        );
-        this.emit('drive:disconnected', drive);
+      if (drive.isConnected) {
+        // If this was a targeted scan for a specific drive letter, do not evaluate other letters
+        if (hintDriveLetter) {
+          const cleanHint = hintDriveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+          const cleanDrive = (drive.driveLetter || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+          if (cleanHint !== cleanDrive) {
+            continue; // Not targeting this drive letter
+          }
+        }
+
+        // Verify physical absence before emitting disconnection. If mountPath still exists, the drive is STILL physically connected!
+        let isPhysicallyPresent = false;
+        if (drive.mountPath) {
+          try {
+            isPhysicallyPresent = fs.existsSync(drive.mountPath);
+          } catch {}
+        }
+
+        if (!currentActiveStableIds.has(stableId) && !isPhysicallyPresent) {
+          drive.isConnected = false;
+          console.log(`[Detector] [${new Date().toISOString()}] State transition: CONNECTED -> DISCONNECTED for drive ${drive.stableHardwareId} [${drive.driveLetter}]`);
+          this.db.log(
+            'warn',
+            'DriveDetector',
+            `Storage device disconnected: ${drive.friendlyName || drive.volumeLabel || 'Disk'} [${drive.driveLetter}] (${stableId})`
+          );
+          this.emit('drive:disconnected', drive);
+        }
       }
     }
+
 
     const currentDrives = Array.from(this.activeDrives.values());
     console.log(`[Detector] [${new Date().toISOString()}] Scan completed. Total active drive(s): ${currentDrives.filter(d => d.isConnected).length} -> [${currentDrives.filter(d => d.isConnected).map(d => `${d.driveLetter} (${d.stableHardwareId})`).join(', ')}]`);

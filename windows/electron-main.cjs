@@ -20,7 +20,23 @@ let tray = null;
 let serverProcess = null;
 const SERVER_PORT = 3000;
 
-// State tracking for detected unregistered drives to support instant click-to-configure
+// SINGLE AUTHORITATIVE TRAY & DRIVE STATE
+// Maintains persistent state for connected eligible drives, pending registrations, and backups.
+const appState = {
+  // Map of stableHardwareId -> RemovableDrive for currently connected drives
+  connectedDrives: new Map(),
+
+  // Pending unregistered drive awaiting user configuration/registration (or null)
+  pendingRegistrationDrive: null,
+
+  // Active backup session info (or null)
+  activeBackup: null,
+
+  // Transient status string and expiration timestamp
+  transientStatus: null,
+  transientExpiry: 0,
+};
+
 let lastUnregisteredDrive = null;
 let pendingRegistrationDrive = null;
 let updateTrayContextMenu = null;
@@ -55,13 +71,28 @@ ipcMain.handle('window:expand', () => {
 });
 
 ipcMain.handle('app:getPendingRegistrationDrive', () => {
-  console.log(`[IPC] [${new Date().toISOString()}] app:getPendingRegistrationDrive requested: ${pendingRegistrationDrive ? `${pendingRegistrationDrive.driveLetter} (${pendingRegistrationDrive.stableHardwareId || pendingRegistrationDrive.volumeLabel})` : 'null'}`);
-  return pendingRegistrationDrive;
+  const pending = appState.pendingRegistrationDrive || pendingRegistrationDrive;
+  console.log(`[IPC] [${new Date().toISOString()}] app:getPendingRegistrationDrive requested: ${pending ? `${pending.driveLetter} (${pending.stableHardwareId || pending.volumeLabel})` : 'null'}`);
+  return pending;
 });
 
 ipcMain.handle('app:clearPendingRegistrationDrive', () => {
   console.log(`[IPC] [${new Date().toISOString()}] app:clearPendingRegistrationDrive called`);
+  appState.pendingRegistrationDrive = null;
   pendingRegistrationDrive = null;
+  lastUnregisteredDrive = null;
+  syncTrayState('clearPendingRegistrationDrive');
+  return true;
+});
+
+ipcMain.handle('app:dismissRegistration', (_event, stableHardwareId) => {
+  console.log(`[IPC] [${new Date().toISOString()}] app:dismissRegistration called for: ${stableHardwareId || 'current'}`);
+  if (appState.pendingRegistrationDrive && (!stableHardwareId || appState.pendingRegistrationDrive.stableHardwareId === stableHardwareId)) {
+    appState.pendingRegistrationDrive = null;
+    pendingRegistrationDrive = null;
+    lastUnregisteredDrive = null;
+  }
+  syncTrayState('user-explicit-dismissal');
   return true;
 });
 
@@ -73,6 +104,7 @@ ipcMain.handle('app:quit', () => {
   app.isQuitting = true;
   app.quit();
 });
+
 
 
 // Check if local server is already running
@@ -136,18 +168,187 @@ function requestDriveRescan(port, source = 'native-ipc', driveLetter = null) {
 // Track current tray tooltip state reliably (since tray.getToolTip is not an Electron API)
 let currentTrayTooltip = 'Dero Vault — Idle (Waiting for USB drive)';
 
-function setTrayStatus(text) {
-  currentTrayTooltip = text;
+/**
+ * Centralized store updater with deduplication by letter and serial
+ */
+function addOrUpdateConnectedDrive(drive) {
+  if (!drive || !drive.stableHardwareId) return;
+
+  // Reconcile and deduplicate: if an entry already exists with the same driveLetter or volumeSerial,
+  // clean up the old key to prevent duplicate dangling records.
+  for (const [existingId, d] of Array.from(appState.connectedDrives.entries())) {
+    const isSameLetter = d.driveLetter && drive.driveLetter && d.driveLetter.toUpperCase() === drive.driveLetter.toUpperCase();
+    const isSameSerial = d.volumeSerial && drive.volumeSerial && d.volumeSerial !== 'UNKNOWN' && d.volumeSerial === drive.volumeSerial;
+    if ((isSameLetter || isSameSerial) && existingId !== drive.stableHardwareId) {
+      console.log(`[State] [${new Date().toISOString()}] Reconciling connected drive: replacing old key "${existingId}" with new "${drive.stableHardwareId}"`);
+      appState.connectedDrives.delete(existingId);
+    }
+  }
+
+  appState.connectedDrives.set(drive.stableHardwareId, drive);
+}
+
+/**
+ * Requirement 8: On device removal, match by persistent identity and verify physical absence.
+ */
+function removeDeviceFromState(deviceIdentifier, reason) {
+  const fs = require('fs');
+  const target = deviceIdentifier ? String(deviceIdentifier).toUpperCase() : null;
+  console.log(`[State] [${new Date().toISOString()}] removeDeviceFromState called for: ${deviceIdentifier || 'unspecified'} (reason: ${reason})`);
+
+  for (const [id, d] of Array.from(appState.connectedDrives.entries())) {
+    const cleanLetter = d.driveLetter ? d.driveLetter.replace(':', '').toUpperCase() : '';
+    const cleanTarget = target ? target.replace(':', '').toUpperCase() : '';
+    const idMatch = target && (id.toUpperCase() === target || (d.stableHardwareId && d.stableHardwareId.toUpperCase() === target));
+    const letterMatch = cleanTarget && cleanLetter && cleanLetter === cleanTarget;
+    const serialMatch = target && d.volumeSerial && d.volumeSerial.toUpperCase() === target;
+
+    if (idMatch || letterMatch || serialMatch) {
+      let physicallyPresent = false;
+      if (d.mountPath) {
+        try {
+          physicallyPresent = fs.existsSync(d.mountPath);
+        } catch {
+          physicallyPresent = false;
+        }
+      }
+
+      if (!physicallyPresent) {
+        console.log(`[State] [${new Date().toISOString()}] Confirmed physical disconnect of ${d.driveLetter} (${d.stableHardwareId}). Removing from authoritative state.`);
+        appState.connectedDrives.delete(id);
+        if (appState.pendingRegistrationDrive && (
+          appState.pendingRegistrationDrive.stableHardwareId === d.stableHardwareId ||
+          appState.pendingRegistrationDrive.driveLetter === d.driveLetter
+        )) {
+          appState.pendingRegistrationDrive = null;
+          pendingRegistrationDrive = null;
+          lastUnregisteredDrive = null;
+        }
+      } else {
+        console.log(`[State] [${new Date().toISOString()}] Ignored removal for ${d.driveLetter} (${d.stableHardwareId}): Drive is still physically mounted at ${d.mountPath}!`);
+      }
+    }
+  }
+
+  syncTrayState(`removeDevice: ${reason}`);
+}
+
+/**
+ * Single authoritative tray state synchronizer.
+ * Enforces requirement 7: Returns tray to IDLE ONLY when there are no connected
+ * eligible drives that require action, no pending registration, and no active backup.
+ * Requirement 9: Logs every transition with new state, reason, connected-drive count,
+ * and pending-registration identity.
+ */
+function syncTrayState(reason) {
+  const fs = require('fs');
+
+  // Verify connected drives physical existence before state calculation
+  for (const [id, d] of Array.from(appState.connectedDrives.entries())) {
+    if (d.mountPath) {
+      try {
+        if (!fs.existsSync(d.mountPath)) {
+          console.log(`[TraySync] [${new Date().toISOString()}] Drive ${d.driveLetter} (${id}) is no longer physically mounted at ${d.mountPath}. Removing.`);
+          appState.connectedDrives.delete(id);
+          if (appState.pendingRegistrationDrive && (appState.pendingRegistrationDrive.stableHardwareId === id || appState.pendingRegistrationDrive.driveLetter === d.driveLetter)) {
+            appState.pendingRegistrationDrive = null;
+            pendingRegistrationDrive = null;
+            lastUnregisteredDrive = null;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // Also verify pending registration drive physical existence
+  if (appState.pendingRegistrationDrive && appState.pendingRegistrationDrive.mountPath) {
+    try {
+      if (!fs.existsSync(appState.pendingRegistrationDrive.mountPath)) {
+        console.log(`[TraySync] [${new Date().toISOString()}] Pending registration drive ${appState.pendingRegistrationDrive.driveLetter} is no longer physically mounted. Clearing.`);
+        appState.pendingRegistrationDrive = null;
+        pendingRegistrationDrive = null;
+        lastUnregisteredDrive = null;
+      }
+    } catch {}
+  }
+
+  const connectedCount = appState.connectedDrives.size;
+  const pendingId = appState.pendingRegistrationDrive ? appState.pendingRegistrationDrive.stableHardwareId : 'none';
+  const pendingLetter = appState.pendingRegistrationDrive ? appState.pendingRegistrationDrive.driveLetter : '';
+
+  let newStatus = '';
+
+  // 1. If an active backup is running
+  if (appState.activeBackup) {
+    const b = appState.activeBackup;
+    if (b.filesProcessed !== undefined && b.totalFiles !== undefined) {
+      newStatus = `Dero Vault — Backing up ${b.driveName || 'removable drive'}: ${b.filesProcessed}/${b.totalFiles} (${b.progress || 0}%)...`;
+    } else {
+      newStatus = `Dero Vault — Backing up ${b.driveName || 'removable drive'}...`;
+    }
+  }
+  // 2. If an unregistered drive is pending registration
+  // Requirement 6: Keep the registration prompt available until registered, dismissed, or physically removed.
+  else if (appState.pendingRegistrationDrive) {
+    const drive = appState.pendingRegistrationDrive;
+    newStatus = `Dero Vault — New USB drive detected (${drive.driveLetter})`;
+  }
+  // 3. If connected drives exist in the authoritative store
+  else if (connectedCount > 0) {
+    const drives = Array.from(appState.connectedDrives.values());
+    const regDrive = drives.find((d) => d.isRegistered);
+    if (regDrive) {
+      newStatus = `Dero Vault — Backing up ${regDrive.friendlyName || regDrive.volumeLabel} (${regDrive.driveLetter})...`;
+    } else {
+      const unreg = drives.find((d) => !d.isRegistered);
+      if (unreg) {
+        appState.pendingRegistrationDrive = unreg;
+        pendingRegistrationDrive = unreg;
+        lastUnregisteredDrive = unreg;
+        newStatus = `Dero Vault — New USB drive detected (${unreg.driveLetter})`;
+      } else {
+        newStatus = 'Dero Vault — Idle (Waiting for USB drive)';
+      }
+    }
+  }
+  // 4. Transient activity (only if within valid expiry AND no pending registration)
+  else if (appState.transientStatus && Date.now() < appState.transientExpiry && !appState.pendingRegistrationDrive) {
+    newStatus = appState.transientStatus;
+  }
+  // 5. Requirement 7: Return to IDLE only when no connected drives, no pending registration, no active backup
+  else {
+    newStatus = 'Dero Vault — Idle (Waiting for USB drive)';
+  }
+
+  const previousStatus = currentTrayTooltip;
+  currentTrayTooltip = newStatus;
+
   if (tray) {
     try {
-      tray.setToolTip(text);
-      console.log(`[Tray] tooltip updated to: ${text}`);
-      console.log(`[Tray] [${new Date().toISOString()}] tooltip updated to: ${text}`);
+      tray.setToolTip(newStatus);
     } catch (err) {
       console.error(`[Tray] [${new Date().toISOString()}] setToolTip error: ${err.message}`);
     }
   }
+
+  // Requirement 9: Timestamped logs with new state, reason, connected count, and pending registration identity
+  console.log(`[TrayTransition] [${new Date().toISOString()}] state="${newStatus}" | reason="${reason}" | connectedCount=${connectedCount} | pendingRegistration="${pendingId}" [${pendingLetter}] (changed=${previousStatus !== newStatus})`);
+
+  if (typeof updateTrayContextMenu === 'function') {
+    updateTrayContextMenu();
+  }
 }
+
+function setTrayStatus(text, reason = 'setTrayStatus') {
+  if (text.includes('Detecting') || text.includes('Scanning') || text.includes('failed')) {
+    if (!appState.pendingRegistrationDrive && !appState.activeBackup) {
+      appState.transientStatus = text;
+      appState.transientExpiry = Date.now() + 2500;
+    }
+  }
+  syncTrayState(`${reason}: ${text}`);
+}
+
 
 // Subscribe Electron Main Process directly to Backend SSE Stream
 // Ensures the System Tray reacts reliably to drive & backup events even when renderer is closed or minimized
@@ -313,7 +514,7 @@ function handleBackendStateChange(eventType, data) {
     const drive = data;
     if (drive.partial || drive.reason === 'detection-timeout') {
       console.log(`[Tray] [${new Date().toISOString()}] Partial classification for drive ${drive.driveLetter}. Setting FAILED terminal state.`);
-      setTrayStatus(`Dero Vault — Detection failed for USB (${drive.driveLetter}) – click to retry`);
+      setTrayStatus(`Dero Vault — Detection failed for USB (${drive.driveLetter}) – click to retry`, 'partial-timeout');
       showTrayNotification({
         title: 'Dero Vault',
         content: `USB drive detected (${drive.driveLetter}), but classification timed out. Click tray icon to retry.`,
@@ -322,90 +523,104 @@ function handleBackendStateChange(eventType, data) {
       return;
     }
 
+    // Update authoritative connected drives
+    addOrUpdateConnectedDrive(drive);
+
     if (drive.isRegistered) {
-      console.log(`[Tray] [${new Date().toISOString()}] Registered drive connected (${drive.driveLetter}). Setting REGISTERED terminal state.`);
-      setTrayStatus(`Dero Vault — Backing up ${drive.friendlyName || drive.volumeLabel} (${drive.driveLetter})...`);
+      console.log(`[Tray] [${new Date().toISOString()}] Registered drive connected (${drive.driveLetter}). Setting REGISTERED state.`);
+      if (appState.pendingRegistrationDrive?.stableHardwareId === drive.stableHardwareId) {
+        appState.pendingRegistrationDrive = null;
+        pendingRegistrationDrive = null;
+        lastUnregisteredDrive = null;
+      }
       showTrayNotification({
         title: 'Dero Vault',
         content: `Registered drive "${drive.friendlyName || drive.volumeLabel}" connected. Automatic backup starting.`,
       });
+      syncTrayState(`drive:connected (registered: ${drive.driveLetter})`);
     } else {
-      console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Setting UNREGISTERED terminal state.`);
-      lastUnregisteredDrive = drive;
+      console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Setting UNREGISTERED pending state.`);
+      appState.pendingRegistrationDrive = drive;
       pendingRegistrationDrive = drive;
-      setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
+      lastUnregisteredDrive = drive;
       showTrayNotification({
         title: 'Dero Vault',
         content: `New removable storage: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to configure.`,
         drive,
         onClick: () => openRegistrationForDrive(drive),
       });
-      if (typeof updateTrayContextMenu === 'function') {
-        updateTrayContextMenu();
-      }
+      syncTrayState(`drive:connected (unregistered: ${drive.driveLetter})`);
     }
   } else if (eventType === 'drive:unregistered_detected' && data) {
     const drive = data;
     if (drive.partial || drive.reason === 'detection-timeout') {
       return; // Handled above
     }
-    console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Storing as lastUnregisteredDrive.`);
-    lastUnregisteredDrive = drive;
+    console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive detected (${drive.driveLetter}). Storing in authoritative state.`);
+    addOrUpdateConnectedDrive(drive);
+    appState.pendingRegistrationDrive = drive;
     pendingRegistrationDrive = drive;
-    setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
+    lastUnregisteredDrive = drive;
     showTrayNotification({
       title: 'Dero Vault',
       content: `New removable storage: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to configure.`,
       drive,
       onClick: () => openRegistrationForDrive(drive),
     });
-    if (typeof updateTrayContextMenu === 'function') {
-      updateTrayContextMenu();
-    }
+    syncTrayState(`drive:unregistered_detected (${drive.driveLetter})`);
   } else if (eventType === 'drive:registered' && data) {
-    if (lastUnregisteredDrive && (!data.stableHardwareId || lastUnregisteredDrive.stableHardwareId === data.stableHardwareId)) {
-      console.log(`[Main] Drive ${data.stableHardwareId} registered. Clearing lastUnregisteredDrive.`);
-      lastUnregisteredDrive = null;
-      pendingRegistrationDrive = null;
-      if (typeof updateTrayContextMenu === 'function') {
-        updateTrayContextMenu();
+    const stableId = data.stableHardwareId;
+    console.log(`[Main] [${new Date().toISOString()}] Drive ${stableId || 'unknown'} registered.`);
+    for (const [id, d] of appState.connectedDrives.entries()) {
+      if (id === stableId || d.driveLetter === data.driveLetter) {
+        d.isRegistered = true;
+        d.friendlyName = data.friendlyName || d.friendlyName;
       }
     }
+    if (appState.pendingRegistrationDrive && (!stableId || appState.pendingRegistrationDrive.stableHardwareId === stableId || appState.pendingRegistrationDrive.driveLetter === data.driveLetter)) {
+      appState.pendingRegistrationDrive = null;
+      pendingRegistrationDrive = null;
+      lastUnregisteredDrive = null;
+    }
+    syncTrayState(`drive:registered (${stableId || data.driveLetter})`);
   } else if (eventType === 'drive:ignored' && data) {
     const letter = data.driveLetter || 'drive';
-    console.log(`[Tray] [${new Date().toISOString()}] Ignored device (${letter}): Setting IGNORED terminal state.`);
-    setTrayStatus(`Dero Vault — Not a backup target (${letter})`);
+    console.log(`[Tray] [${new Date().toISOString()}] Ignored device (${letter}): Setting IGNORED state.`);
+    setTrayStatus(`Dero Vault — Not a backup target (${letter})`, 'drive:ignored');
     showTrayNotification({
       title: 'Dero Vault',
       content: `Storage device (${letter}) is not a backup target.`,
       type: 'info',
     });
   } else if (eventType === 'drive:failed' && data) {
-    console.log(`[Tray] [${new Date().toISOString()}] Detection failed for device: Setting FAILED terminal state.`);
-    setTrayStatus('Dero Vault — Detection failed – click to retry');
+    console.log(`[Tray] [${new Date().toISOString()}] Detection failed for device: Setting FAILED state.`);
+    setTrayStatus('Dero Vault — Detection failed – click to retry', 'drive:failed');
   } else if (eventType === 'drive:disconnected' && data) {
     const drive = data;
-    console.log(`[Tray] [${new Date().toISOString()}] Storage device disconnected (${drive.driveLetter}). Setting Idle state.`);
-    if (lastUnregisteredDrive && (!drive.stableHardwareId || lastUnregisteredDrive.stableHardwareId === drive.stableHardwareId || lastUnregisteredDrive.driveLetter === drive.driveLetter)) {
-      lastUnregisteredDrive = null;
-      pendingRegistrationDrive = null;
-      if (typeof updateTrayContextMenu === 'function') {
-        updateTrayContextMenu();
-      }
-    }
-    setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+    console.log(`[Tray] [${new Date().toISOString()}] Storage device disconnected event for ${drive.driveLetter} (${drive.stableHardwareId})`);
+    removeDeviceFromState(drive.stableHardwareId || drive.driveLetter, 'sse:drive:disconnected');
   } else if (eventType === 'backup:start' && data) {
-    setTrayStatus(`Dero Vault — Backing up ${data.driveName || 'removable drive'}...`);
+    appState.activeBackup = { status: 'running', driveName: data.driveName };
+    syncTrayState(`backup:start (${data.driveName})`);
   } else if (eventType === 'backup:update' && data) {
-    setTrayStatus(`Dero Vault — Backing up ${data.driveName}: ${data.filesProcessed}/${data.totalFiles} (${data.progress || 0}%)...`);
+    appState.activeBackup = {
+      status: 'running',
+      driveName: data.driveName,
+      filesProcessed: data.filesProcessed,
+      totalFiles: data.totalFiles,
+      progress: data.progress,
+    };
+    syncTrayState(`backup:update (${data.driveName}: ${data.progress}%)`);
   } else if (eventType === 'backup:complete' && data) {
-    setTrayStatus("Dero Vault — Today's work is safely backed up.");
+    appState.activeBackup = null;
+    syncTrayState('backup:complete');
     showTrayNotification({
       title: 'Dero Vault',
       content: "✓ Today's work is safely backed up.",
     });
   }
 }
+
 
 
 // Start embedded backend server
@@ -743,34 +958,39 @@ function createWindow() {
               clearTimeout(detectionWatchdogTimer);
               detectionWatchdogTimer = null;
             }
-            // Check terminal state from returned drives
             if (Array.isArray(res.drives) && res.drives.length > 0) {
+              for (const d of res.drives) {
+                if (!d.partial) {
+                  addOrUpdateConnectedDrive(d);
+                }
+              }
               const matched = res.drives.find(d => hintDriveLetter ? d.driveLetter.startsWith(hintDriveLetter.replace(':', '')) : true) || res.drives[0];
               if (matched.isRegistered) {
-                console.log(`[Tray] [${new Date().toISOString()}] Registered drive matched (${matched.driveLetter}). Setting REGISTERED terminal state.`);
-                setTrayStatus(`Dero Vault — Backing up ${matched.friendlyName || matched.volumeLabel} (${matched.driveLetter})...`);
+                syncTrayState(`retry arrival registered (${matched.driveLetter})`);
               } else {
-                console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive matched (${matched.driveLetter}). Setting UNREGISTERED terminal state.`);
-                setTrayStatus(`Dero Vault — New USB drive detected (${matched.driveLetter})`);
+                appState.pendingRegistrationDrive = matched;
+                pendingRegistrationDrive = matched;
+                lastUnregisteredDrive = matched;
+                syncTrayState(`retry arrival unregistered (${matched.driveLetter})`);
               }
             }
           } else if (idx === delays.length - 1 && (!res || res.count === 0)) {
-            console.log(`[Main] [${new Date().toISOString()}] Bounded retry sequence complete (~15s). Drive was never observed post-arrival.`);
+            console.log(`[Main] [${new Date().toISOString()}] Bounded retry sequence complete (~15s).`);
             if (detectionWatchdogTimer) {
               clearTimeout(detectionWatchdogTimer);
               detectionWatchdogTimer = null;
             }
-            if (currentTrayTooltip.includes('Detecting USB drive')) {
-              console.log(`[Main] [${new Date().toISOString()}] Final retry completed with 0 drives. Setting FAILED terminal state.`);
+            if (appState.connectedDrives.size === 0 && currentTrayTooltip.includes('Detecting USB drive')) {
               setTrayStatus(hintDriveLetter
                 ? `Dero Vault — Detection failed for USB (${hintDriveLetter}) – click to retry`
-                : `Dero Vault — Detection failed – click to retry`);
+                : `Dero Vault — Detection failed – click to retry`, 'retry-exhausted-failed');
             }
           }
         }, delay);
         pendingRetryTimers.push(timer);
       });
     };
+
 
     function parseWindowParam(param) {
       if (typeof param === 'number') {
@@ -840,13 +1060,15 @@ function createWindow() {
               const clean = extractedLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
               const matched = res.drives.find(d => d.driveLetter && d.driveLetter.toUpperCase().startsWith(clean)) || res.drives[0];
               if (matched && !matched.partial) {
-                console.log(`[Main] [${new Date().toISOString()}] Fast-path completed in ${elapsed}ms for ${extractedLetter}. Setting terminal state.`);
+                console.log(`[Main] [${new Date().toISOString()}] Fast-path completed in ${elapsed}ms for ${extractedLetter}. Storing in authoritative appState.`);
+                addOrUpdateConnectedDrive(matched);
                 if (matched.isRegistered) {
-                  console.log(`[Tray] [${new Date().toISOString()}] Registered drive matched (${matched.driveLetter}). Setting REGISTERED terminal state.`);
-                  setTrayStatus(`Dero Vault — Backing up ${matched.friendlyName || matched.volumeLabel} (${matched.driveLetter})...`);
+                  syncTrayState(`fast-path arrival registered (${matched.driveLetter})`);
                 } else {
-                  console.log(`[Tray] [${new Date().toISOString()}] Unregistered drive matched (${matched.driveLetter}). Setting UNREGISTERED terminal state.`);
-                  setTrayStatus(`Dero Vault — New USB drive detected (${matched.driveLetter})`);
+                  appState.pendingRegistrationDrive = matched;
+                  pendingRegistrationDrive = matched;
+                  lastUnregisteredDrive = matched;
+                  syncTrayState(`fast-path arrival unregistered (${matched.driveLetter})`);
                 }
                 return; // Reached terminal state in well under 300-500ms! No retry needed!
               }
@@ -858,15 +1080,24 @@ function createWindow() {
           scheduleExponentialBackoffRescan(`DBT_DEVICEARRIVAL (0x8000)${volInfoStr}`, null);
         }
       } else if (wParamNum === 0x8004) {
-        console.log(`[Main] [${new Date().toISOString()}] Device removal complete. Setting Idle state.`);
-        setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
-        scheduleExponentialBackoffRescan(`DBT_DEVICEREMOVECOMPLETE (0x8004)${volInfoStr}`, null);
+        console.log(`[NativeEvent] [${new Date().toISOString()}] Device removal complete event (0x8004) for ${extractedLetter || 'device'}`);
+        removeDeviceFromState(extractedLetter, 'wm_devicechange:0x8004');
       } else if (wParamNum === 0x0007) {
-        console.log(`[Main] [${new Date().toISOString()}] Devnodes changed. Scheduling non-hinted rescan.`);
-        scheduleExponentialBackoffRescan('DBT_DEVNODES_CHANGED (0x0007)', null);
+        console.log(`[Main] [${new Date().toISOString()}] Devnodes changed (0x0007). Running non-destructive reconciliation without erasing valid state.`);
+        requestDriveRescan(SERVER_PORT, 'wm-devnodes-changed').then((res) => {
+          if (res && Array.isArray(res.drives) && res.drives.length > 0) {
+            for (const d of res.drives) {
+              if (!d.partial) {
+                addOrUpdateConnectedDrive(d);
+              }
+            }
+            syncTrayState('wm-devnodes-reconciled');
+          }
+        }).catch(() => {});
       }
       return true;
     });
+
 
     // Cleanup notifications when window or app closes
     app.on('before-quit', () => {
@@ -964,16 +1195,13 @@ function createTray() {
         click: async () => {
           console.log(`[Tray] Manual rescan triggered from tray context menu.`);
           setTrayStatus('Dero Vault — Scanning storage drives...');
-          const autoClear = setTimeout(() => {
-            if (currentTrayTooltip === 'Dero Vault — Scanning storage drives...') {
-              setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
-            }
-          }, 250);
           const res = await requestDriveRescan(SERVER_PORT, 'tray-menu-rescan');
-          clearTimeout(autoClear);
-          if (!res || res.count === 0) {
-            setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+          if (res && res.count > 0 && Array.isArray(res.drives)) {
+            for (const d of res.drives) {
+              if (!d.partial) addOrUpdateConnectedDrive(d);
+            }
           }
+          syncTrayState('tray-menu-rescan-complete');
         },
       },
       { type: 'separator' },
@@ -997,23 +1225,21 @@ function createTray() {
     if (currentTrayTooltip.includes('click to') || currentTrayTooltip.includes('Detection failed')) {
       console.log(`[Tray] Tray clicked while in error/retry state. Triggering immediate rescan.`);
       setTrayStatus('Dero Vault — Scanning storage drives...');
-      const autoClear = setTimeout(() => {
-        if (currentTrayTooltip === 'Dero Vault — Scanning storage drives...') {
-          setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
-        }
-      }, 250);
       const res = await requestDriveRescan(SERVER_PORT, 'tray-click-rescan');
-      clearTimeout(autoClear);
-      if (!res || res.count === 0) {
-        setTrayStatus('Dero Vault — Idle (Waiting for USB drive)');
+      if (res && res.count > 0 && Array.isArray(res.drives)) {
+        for (const d of res.drives) {
+          if (!d.partial) addOrUpdateConnectedDrive(d);
+        }
       }
+      syncTrayState('tray-click-rescan-complete');
       return;
     }
 
     // Required fallback: clicking the tray icon must open the application and (if unregistered drive present) open configuration for it
-    console.log(`[TrayAction] [${new Date().toISOString()}] Tray single-click. lastUnregisteredDrive=${lastUnregisteredDrive ? lastUnregisteredDrive.driveLetter : 'none'}`);
-    if (lastUnregisteredDrive) {
-      openRegistrationForDrive(lastUnregisteredDrive);
+    const targetDrive = lastUnregisteredDrive || appState.pendingRegistrationDrive;
+    console.log(`[TrayAction] [${new Date().toISOString()}] Tray single-click. targetDrive=${targetDrive ? targetDrive.driveLetter : 'none'}`);
+    if (targetDrive) {
+      openRegistrationForDrive(targetDrive);
     } else if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -1023,9 +1249,10 @@ function createTray() {
   });
 
   tray.on('double-click', () => {
-    console.log(`[TrayAction] [${new Date().toISOString()}] Tray double-clicked. lastUnregisteredDrive=${lastUnregisteredDrive ? lastUnregisteredDrive.driveLetter : 'none'}`);
-    if (lastUnregisteredDrive) {
-      openRegistrationForDrive(lastUnregisteredDrive);
+    const targetDrive = lastUnregisteredDrive || appState.pendingRegistrationDrive;
+    console.log(`[TrayAction] [${new Date().toISOString()}] Tray double-clicked. targetDrive=${targetDrive ? targetDrive.driveLetter : 'none'}`);
+    if (targetDrive) {
+      openRegistrationForDrive(targetDrive);
     } else if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -1035,9 +1262,10 @@ function createTray() {
   });
 
   tray.on('balloon-click', () => {
-    console.log(`[TrayAction] [${new Date().toISOString()}] Tray balloon clicked. Opening configuration for drive.`);
-    if (lastUnregisteredDrive) {
-      openRegistrationForDrive(lastUnregisteredDrive);
+    const targetDrive = lastUnregisteredDrive || appState.pendingRegistrationDrive;
+    console.log(`[TrayAction] [${new Date().toISOString()}] Tray balloon clicked. Opening configuration for drive: ${targetDrive ? targetDrive.driveLetter : 'none'}`);
+    if (targetDrive) {
+      openRegistrationForDrive(targetDrive);
     } else if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -1072,14 +1300,24 @@ if (!gotTheLock) {
     requestDriveRescan(SERVER_PORT, 'startup-initial-scan').then((res) => {
       console.log(`[Main] [${new Date().toISOString()}] Startup drive scan completed: ${res ? res.count : 0} drive(s) found.`);
       if (res && res.count > 0 && Array.isArray(res.drives) && res.drives.length > 0) {
+        for (const drive of res.drives) {
+          if (!drive.partial) {
+            addOrUpdateConnectedDrive(drive);
+          }
+        }
         const drive = res.drives[0];
         if (drive.isRegistered) {
           console.log(`[Tray] [${new Date().toISOString()}] Startup drive matched registered (${drive.driveLetter}). Setting REGISTERED state.`);
-          setTrayStatus(`Dero Vault — Backing up ${drive.friendlyName || drive.volumeLabel} (${drive.driveLetter})...`);
+          syncTrayState(`startup-scan (registered: ${drive.driveLetter})`);
         } else {
           console.log(`[Tray] [${new Date().toISOString()}] Startup drive matched unregistered (${drive.driveLetter}). Setting UNREGISTERED state.`);
-          setTrayStatus(`Dero Vault — New USB drive detected (${drive.driveLetter})`);
+          appState.pendingRegistrationDrive = drive;
+          pendingRegistrationDrive = drive;
+          lastUnregisteredDrive = drive;
+          syncTrayState(`startup-scan (unregistered: ${drive.driveLetter})`);
         }
+      } else {
+        syncTrayState('startup-scan (empty)');
       }
     }).catch((err) => {
       console.log(`[Main] [${new Date().toISOString()}] Startup drive scan error: ${err.message}`);

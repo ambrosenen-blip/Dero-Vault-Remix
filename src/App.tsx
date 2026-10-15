@@ -162,9 +162,6 @@ export default function App() {
 
         setUnregisteredModalDrive(null);
         setRegisterModalDrive(fullDrive);
-        if ((window as any).electronAPI?.clearPendingRegistrationDrive) {
-          (window as any).electronAPI.clearPendingRegistrationDrive();
-        }
       }
     };
 
@@ -349,6 +346,9 @@ export default function App() {
   }) => {
     try {
       await ApiClient.registerDrive(data);
+      if ((window as any).electronAPI?.clearPendingRegistrationDrive) {
+        (window as any).electronAPI.clearPendingRegistrationDrive();
+      }
       setTrayNotification(null);
       await refreshAll();
       // Start backup immediately upon registration
@@ -372,6 +372,9 @@ export default function App() {
   }) => {
     try {
       await ApiClient.registerDrive(data);
+      if ((window as any).electronAPI?.clearPendingRegistrationDrive) {
+        (window as any).electronAPI.clearPendingRegistrationDrive();
+      }
       setRegisterModalDrive(null);
       setUnregisteredModalDrive(null);
       await refreshAll();
@@ -652,7 +655,12 @@ export default function App() {
           setUnregisteredModalDrive(null);
           setRegisterModalDrive(drive);
         }}
-        onIgnore={() => setUnregisteredModalDrive(null)}
+        onIgnore={() => {
+          if (unregisteredModalDrive && (window as any).electronAPI?.dismissRegistration) {
+            (window as any).electronAPI.dismissRegistration(unregisteredModalDrive.stableHardwareId);
+          }
+          setUnregisteredModalDrive(null);
+        }}
       />
 
       {/* Modal 2: Drive Registration & Protection Setup */}
