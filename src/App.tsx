@@ -138,9 +138,14 @@ export default function App() {
 
     const cleanups: (() => void)[] = [];
 
+    if ((window as any).electronAPI) {
+      console.log(`[App] [${new Date().toISOString()}] Electron environment active. Preload ping: ${(window as any).electronAPI.ping?.()}`);
+    }
+
     const handleOpenRegistration = (driveData: any) => {
-      console.log('[App] handleOpenRegistration invoked with driveData:', driveData);
+      console.log(`[App] [${new Date().toISOString()}] handleOpenRegistration invoked for:`, driveData ? driveData.driveLetter : 'null');
       setIsMinimizedToTray(false);
+      setIsWelcomeOpen(false); // Ensure welcome modal never covers registration modal
       if (driveData) {
         const fullDrive: RemovableDrive = {
           id: driveData.id || driveData.stableHardwareId || `USB-HW-${(driveData.driveLetter || 'E').replace(/[^a-zA-Z]/g, '')}`,
@@ -160,6 +165,7 @@ export default function App() {
           isSystemDrive: false,
         };
 
+        console.log(`[App] [${new Date().toISOString()}] Activating DriveRegistrationModal for drive: ${fullDrive.driveLetter} (${fullDrive.stableHardwareId})`);
         setUnregisteredModalDrive(null);
         setRegisterModalDrive(fullDrive);
       }

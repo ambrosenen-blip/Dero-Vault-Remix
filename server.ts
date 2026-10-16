@@ -37,6 +37,17 @@ export async function createDeroVaultServer(customPort?: number) {
 
   app.use(express.json());
 
+  // Universal CORS support for local Electron file:// and http:// origins
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, X-Rescan-Source');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // Initialize Core Services
   const db = new LocalDatabase();
   const driveDetector = new DriveDetector(db);
@@ -166,6 +177,14 @@ export async function createDeroVaultServer(customPort?: number) {
       console.log(`[Backend] [${new Date().toISOString()}] Rescan failed after ${Date.now() - startT}ms: ${err.message}`);
       res.status(500).json({ error: err.message, success: false, count: 0 });
     }
+  });
+
+  // Explicit hardware removal notification (used by WM_DEVICECHANGE 0x8004)
+  app.post('/api/drives/removal', (req: Request, res: Response) => {
+    const driveLetter = req.body?.driveLetter || req.query.driveLetter;
+    console.log(`[Backend] [${new Date().toISOString()}] /api/drives/removal received for drive letter: ${driveLetter || 'unspecified'}`);
+    const removedDrives = driveDetector.handleDeviceRemoval(driveLetter);
+    res.json({ success: true, count: removedDrives.length, removedDrives });
   });
 
   // Diagnostic endpoint to independently test physical drive detection boundaries

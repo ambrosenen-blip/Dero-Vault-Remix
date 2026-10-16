@@ -150,8 +150,10 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
     });
   };
 
+  console.log(`[DriveRegistrationModal] [${new Date().toISOString()}] Rendering modal for drive: ${drive.driveLetter} (${drive.stableHardwareId})`);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-200 overflow-y-auto">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in duration-200 overflow-y-auto">
       <div className="w-full max-w-lg bg-[#0D1B3D] border border-[#1E3466] rounded-2xl shadow-2xl p-6 space-y-6 text-slate-100 my-8">
         {/* Header */}
         <div className="flex items-start justify-between pb-4 border-b border-[#1E3466]">

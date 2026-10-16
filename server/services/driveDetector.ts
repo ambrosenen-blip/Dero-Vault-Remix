@@ -210,13 +210,28 @@ export class DriveDetector extends EventEmitter {
       }
     }
 
-    // Pipeline-level fallback: if adapter produced zero drives but hint letter is present
+    // Pipeline-level fallback: if adapter produced zero drives but hint letter is present,
+    // verify the root volume actually exists physically before generating a fallback.
+    // If it is physically absent, the drive was removed.
     if (detectedNow.size === 0 && hintDriveLetter) {
-      console.warn(
-        `[DriveDetector] [${new Date().toISOString()}] Adapter produced 0 drives for hint letter ${hintDriveLetter}. Generating fallback partial drive.`
-      );
-      const partialDrive = this.createPartialFallbackDrive(hintDriveLetter);
-      detectedNow.set(partialDrive.stableHardwareId, partialDrive);
+      const cleanLetter = hintDriveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase();
+      const rootPath = `${cleanLetter}:\\`;
+      let physicallyPresent = false;
+      try {
+        physicallyPresent = fs.existsSync(rootPath);
+      } catch {}
+
+      if (physicallyPresent) {
+        console.warn(
+          `[DriveDetector] [${new Date().toISOString()}] Adapter produced 0 drives for hint letter ${hintDriveLetter}, but ${rootPath} is physically mounted. Generating fallback partial drive.`
+        );
+        const partialDrive = this.createPartialFallbackDrive(hintDriveLetter);
+        detectedNow.set(partialDrive.stableHardwareId, partialDrive);
+      } else {
+        console.log(
+          `[DriveDetector] [${new Date().toISOString()}] Volume ${rootPath} is physically absent. NOT generating fallback partial drive.`
+        );
+      }
     }
 
     // 2. State reconciliation and event emission
@@ -349,5 +364,39 @@ export class DriveDetector extends EventEmitter {
     }
 
     return undefined;
+  }
+
+  public handleDeviceRemoval(driveLetterOrId?: string): RemovableDrive[] {
+    const target = driveLetterOrId ? driveLetterOrId.toUpperCase().replace(/[^a-zA-Z0-9]/g, '') : null;
+    console.log(`[Detector] [${new Date().toISOString()}] handleDeviceRemoval invoked for: ${driveLetterOrId || 'all absent drives'}`);
+
+    const removed: RemovableDrive[] = [];
+    for (const [stableId, drive] of this.activeDrives.entries()) {
+      const cleanLetter = drive.driveLetter ? drive.driveLetter.toUpperCase().replace(/[^a-zA-Z]/g, '') : '';
+      const cleanId = drive.stableHardwareId ? drive.stableHardwareId.toUpperCase().replace(/[^a-zA-Z0-9]/g, '') : '';
+      const match = !target || cleanLetter === target || cleanId === target || (drive.volumeSerial && drive.volumeSerial.toUpperCase() === target);
+
+      let isPresent = false;
+      if (drive.mountPath) {
+        try {
+          isPresent = fs.existsSync(drive.mountPath);
+        } catch {
+          isPresent = false;
+        }
+      }
+
+      if (match && !isPresent && drive.isConnected) {
+        drive.isConnected = false;
+        removed.push(drive);
+        console.log(`[Detector] [${new Date().toISOString()}] State transition: CONNECTED -> DISCONNECTED for drive ${drive.stableHardwareId} [${drive.driveLetter}]`);
+        this.db.log(
+          'warn',
+          'DriveDetector',
+          `Storage device disconnected: ${drive.friendlyName || drive.volumeLabel || 'Disk'} [${drive.driveLetter}] (${stableId})`
+        );
+        this.emit('drive:disconnected', drive);
+      }
+    }
+    return removed;
   }
 }

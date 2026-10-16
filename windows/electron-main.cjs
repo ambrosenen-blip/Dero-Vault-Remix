@@ -203,7 +203,9 @@ function removeDeviceFromState(deviceIdentifier, reason) {
     const letterMatch = cleanTarget && cleanLetter && cleanLetter === cleanTarget;
     const serialMatch = target && d.volumeSerial && d.volumeSerial.toUpperCase() === target;
 
-    if (idMatch || letterMatch || serialMatch) {
+    const match = Boolean(idMatch || letterMatch || serialMatch || (!target));
+
+    if (match) {
       let physicallyPresent = false;
       if (d.mountPath) {
         try {
@@ -402,8 +404,9 @@ function openRegistrationForDrive(drive) {
       });
     } else {
       dispatchEvents();
-      // Reinforce dispatch after 150ms to ensure React hooks have mounted if window was hidden
-      setTimeout(dispatchEvents, 150);
+      setTimeout(dispatchEvents, 100);
+      setTimeout(dispatchEvents, 300);
+      setTimeout(dispatchEvents, 600);
     }
   }
 }
@@ -412,6 +415,9 @@ function openRegistrationForDrive(drive) {
  * Shows desktop notification using Electron Notification API (primary, full click support)
  * with tray.displayBalloon as secondary fallback.
  */
+// Retain active notification references to prevent V8 garbage collection on Windows
+const activeNotifications = [];
+
 function showTrayNotification(opts) {
   const { title = 'Dero Vault', content = '', type = 'info', drive = null, onClick = null } = opts || {};
   const now = Date.now();
@@ -425,8 +431,8 @@ function showTrayNotification(opts) {
     console.log(`[Notification] [${new Date().toISOString()}] Notification clicked by user: "${content}"`);
     if (typeof onClick === 'function') {
       onClick();
-    } else if (drive || lastUnregisteredDrive) {
-      openRegistrationForDrive(drive || lastUnregisteredDrive);
+    } else if (drive || lastUnregisteredDrive || appState.pendingRegistrationDrive) {
+      openRegistrationForDrive(drive || lastUnregisteredDrive || appState.pendingRegistrationDrive);
     } else {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
@@ -453,6 +459,17 @@ function showTrayNotification(opts) {
       });
 
       notification.on('click', clickHandler);
+      notification.on('action', clickHandler);
+      notification.on('close', () => {
+        console.log(`[Notification] [${new Date().toISOString()}] Notification closed`);
+      });
+
+      // Keep reference alive so GC doesn't collect native WinRT toast callback
+      activeNotifications.push(notification);
+      if (activeNotifications.length > 8) {
+        activeNotifications.shift();
+      }
+
       notification.show();
       console.log(`[Notification] [${new Date().toISOString()}] Native toast shown: "${content}" (click handler attached: true)`);
       return;
@@ -634,12 +651,39 @@ async function ensureServerRunning() {
     return;
   }
 
-  const serverScript = path.join(__dirname, '..', 'dist-server', 'server.mjs');
-  console.log(`[Main] [${new Date().toISOString()}] Starting embedded Dero Vault server: ${serverScript}`);
+  // 1. Direct in-process startup using CommonJS bundle (works 100% reliably in dev AND inside app.asar)
+  const cjsServerPath = path.join(__dirname, '..', 'dist-server', 'server.cjs');
+  console.log(`[Main] [${new Date().toISOString()}] Starting embedded Dero Vault server in-process: ${cjsServerPath}`);
 
   try {
-    // Use process.execPath with ELECTRON_RUN_AS_NODE: '1' so Electron executes server.mjs as Node.js
-    serverProcess = fork(serverScript, [], {
+    const serverModule = require(cjsServerPath);
+    if (serverModule && typeof serverModule.createDeroVaultServer === 'function') {
+      await serverModule.createDeroVaultServer(SERVER_PORT);
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started in-process on port ${SERVER_PORT}`);
+      return;
+    }
+  } catch (cjsErr) {
+    console.warn(`[Main] [${new Date().toISOString()}] In-process require('${cjsServerPath}') threw: ${cjsErr.message}. Trying ESM fallback.`);
+  }
+
+  // 2. Fallback: Start server in-process via dynamic import of ESM bundle
+  const esmServerPath = path.join(__dirname, '..', 'dist-server', 'server.mjs');
+  try {
+    const { pathToFileURL } = require('url');
+    const serverModuleUrl = pathToFileURL(esmServerPath).href;
+    const serverModule = await import(serverModuleUrl);
+    if (serverModule && typeof serverModule.createDeroVaultServer === 'function') {
+      await serverModule.createDeroVaultServer(SERVER_PORT);
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started via ESM import on port ${SERVER_PORT}`);
+      return;
+    }
+  } catch (inProcErr) {
+    console.error(`[Main] [${new Date().toISOString()}] In-process server startup error: ${inProcErr.message}`);
+  }
+
+  // 3. Fallback: Child process fork
+  try {
+    serverProcess = fork(esmServerPath, [], {
       execPath: process.execPath,
       env: {
         ...process.env,
@@ -665,35 +709,11 @@ async function ensureServerRunning() {
       console.log(`[Main] [${new Date().toISOString()}] Embedded server process exited with code ${code}, signal ${sig}`);
     });
   } catch (forkErr) {
-    console.warn(`[Main] [${new Date().toISOString()}] Fork failed: ${forkErr.message}. Falling back to in-process startup.`);
-  }
-
-  // Poll for child process response (up to 3 seconds)
-  for (let i = 0; i < 15; i++) {
-    await new Promise((r) => setTimeout(r, 200));
-    if (await pingServer(SERVER_PORT)) {
-      console.log(`[Main] [${new Date().toISOString()}] Embedded server is ready on port ${SERVER_PORT}.`);
-      return;
-    }
-  }
-
-  // Fallback: Start server in-process via dynamic import
-  console.log(`[Main] [${new Date().toISOString()}] Child server not responding on port ${SERVER_PORT}. Attempting in-process startup...`);
-  try {
-    const { pathToFileURL } = require('url');
-    const serverModuleUrl = pathToFileURL(serverScript).href;
-    const serverModule = await import(serverModuleUrl);
-    if (serverModule && typeof serverModule.createDeroVaultServer === 'function') {
-      await serverModule.createDeroVaultServer(SERVER_PORT);
-      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started in-process on port ${SERVER_PORT}`);
-      return;
-    }
-  } catch (inProcErr) {
-    console.error(`[Main] [${new Date().toISOString()}] In-process server startup error: ${inProcErr.message}`);
+    console.warn(`[Main] [${new Date().toISOString()}] Fork failed: ${forkErr.message}.`);
   }
 
   // Final confirmation
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 200));
     if (await pingServer(SERVER_PORT)) {
       console.log(`[Main] [${new Date().toISOString()}] Embedded server is ready on port ${SERVER_PORT}.`);
@@ -721,11 +741,33 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false,
     },
   });
 
   const appUrl = `http://127.0.0.1:${SERVER_PORT}`;
   console.log(`[Main] [${new Date().toISOString()}] Loading renderer from ${appUrl}`);
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log(`[Main] [${new Date().toISOString()}] did-finish-load: URL=${mainWindow.webContents.getURL()}`);
+  });
+
+  mainWindow.webContents.on('dom-ready', () => {
+    console.log(`[Main] [${new Date().toISOString()}] dom-ready: DOM content parsed for ${mainWindow.webContents.getURL()}`);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[Main] [${new Date().toISOString()}] render-process-gone: reason=${details.reason}, exitCode=${details.exitCode}`);
+  });
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.warn(`[Main] [${new Date().toISOString()}] Renderer window became unresponsive`);
+  });
+
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const levelName = level === 3 ? 'ERROR' : level === 2 ? 'WARN' : 'INFO';
+    console.log(`[RendererConsole] [${levelName}] ${message} (${path.basename(sourceId || '')}:${line})`);
+  });
 
   function loadLocalFallback() {
     const fs = require('fs');
@@ -759,8 +801,8 @@ function createWindow() {
     loadLocalFallback();
   });
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error(`[Main] [${new Date().toISOString()}] did-fail-load: code=${errorCode}, description="${errorDescription}", url=${validatedURL}`);
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.error(`[Main] [${new Date().toISOString()}] did-fail-load: code=${errorCode}, description="${errorDescription}", url=${validatedURL}, isMainFrame=${isMainFrame}`);
     showTrayNotification({
       title: 'Dero Vault',
       content: `Failed to load application interface (${errorDescription}). Retrying...`,
@@ -1064,6 +1106,7 @@ function createWindow() {
               const matched = res.drives.find(d => d.driveLetter && d.driveLetter.toUpperCase().startsWith(clean)) || res.drives[0];
               if (matched && !matched.partial) {
                 console.log(`[Main] [${new Date().toISOString()}] Fast-path completed in ${elapsed}ms for ${extractedLetter}. Storing in authoritative appState.`);
+                const wasConnected = appState.connectedDrives.has(matched.stableHardwareId);
                 addOrUpdateConnectedDrive(matched);
                 if (matched.isRegistered) {
                   syncTrayState(`fast-path arrival registered (${matched.driveLetter})`);
@@ -1072,6 +1115,15 @@ function createWindow() {
                   pendingRegistrationDrive = matched;
                   lastUnregisteredDrive = matched;
                   syncTrayState(`fast-path arrival unregistered (${matched.driveLetter})`);
+                  if (!wasConnected) {
+                    console.log(`[Main] [${new Date().toISOString()}] Triggering fresh arrival notification for ${matched.driveLetter}`);
+                    showTrayNotification({
+                      title: 'Dero Vault',
+                      content: `New removable storage: ${matched.volumeLabel || 'Disk'} (${matched.driveLetter}). Click to configure.`,
+                      drive: matched,
+                      onClick: () => openRegistrationForDrive(matched),
+                    });
+                  }
                 }
                 return; // Reached terminal state in well under 300-500ms! No retry needed!
               }
@@ -1085,6 +1137,25 @@ function createWindow() {
       } else if (wParamNum === 0x8004) {
         console.log(`[NativeEvent] [${new Date().toISOString()}] Device removal complete event (0x8004) for ${extractedLetter || 'device'}`);
         removeDeviceFromState(extractedLetter, 'wm_devicechange:0x8004');
+
+        // Immediately notify backend server so DriveDetector marks drive DISCONNECTED
+        const postData = JSON.stringify({ driveLetter: extractedLetter });
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port: SERVER_PORT,
+          path: '/api/drives/removal',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+          },
+          timeout: 2000,
+        }, () => {});
+        req.on('error', (err) => {
+          console.warn(`[Main] /api/drives/removal notification error: ${err.message}`);
+        });
+        req.write(postData);
+        req.end();
       } else if (wParamNum === 0x0007) {
         console.log(`[Main] [${new Date().toISOString()}] Devnodes changed (0x0007). Running non-destructive reconciliation without erasing valid state.`);
         requestDriveRescan(SERVER_PORT, 'wm-devnodes-changed').then((res) => {
@@ -1148,13 +1219,13 @@ function createTray() {
   function updateContextMenu() {
     if (!tray) return;
 
+    const pendingTarget = lastUnregisteredDrive || appState.pendingRegistrationDrive;
+
     const items = [
       {
         label: 'Open Dero Vault',
         click: () => {
-          if (lastUnregisteredDrive) {
-            openRegistrationForDrive(lastUnregisteredDrive);
-          } else if (mainWindow) {
+          if (mainWindow) {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.show();
             mainWindow.focus();
@@ -1164,11 +1235,12 @@ function createTray() {
       },
     ];
 
-    if (lastUnregisteredDrive) {
+    if (pendingTarget) {
       items.push({
-        label: `Configure USB Drive (${lastUnregisteredDrive.driveLetter})...`,
+        label: `Configure USB Drive (${pendingTarget.driveLetter})...`,
         click: () => {
-          openRegistrationForDrive(lastUnregisteredDrive);
+          console.log(`[TrayMenu] User clicked "Configure USB Drive (${pendingTarget.driveLetter})"`);
+          openRegistrationForDrive(pendingTarget);
         },
       });
     }
@@ -1205,6 +1277,16 @@ function createTray() {
             }
           }
           syncTrayState('tray-menu-rescan-complete');
+        },
+      },
+      {
+        label: 'Developer Tools',
+        click: () => {
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.webContents.openDevTools();
+          }
         },
       },
       { type: 'separator' },
