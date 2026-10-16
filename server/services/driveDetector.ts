@@ -333,6 +333,21 @@ export class DriveDetector extends EventEmitter {
   }
 
   public getDriveByStableId(stableId: string): RemovableDrive | undefined {
-    return this.activeDrives.get(stableId);
+    if (!stableId) return undefined;
+    const direct = this.activeDrives.get(stableId);
+    if (direct) return direct;
+
+    const targetLower = stableId.toLowerCase();
+    for (const [id, d] of this.activeDrives.entries()) {
+      if (id.toLowerCase() === targetLower) return d;
+    }
+
+    for (const d of this.activeDrives.values()) {
+      if (d.driveLetter && stableId.toUpperCase().includes(d.driveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase())) {
+        return d;
+      }
+    }
+
+    return undefined;
   }
 }

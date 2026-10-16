@@ -108,6 +108,14 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
     setSelectedPaths(selectedPaths.filter((p) => p !== path));
   };
 
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return 'Unknown';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!friendlyName.trim()) {
@@ -118,6 +126,18 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
     if (selectedPaths.length === 0) {
       setErrorMessage('Please select at least one folder on your computer to protect.');
       return;
+    }
+
+    // Safety rule: Source folder must not reside on the destination drive itself
+    const driveLetterUpper = drive.driveLetter ? drive.driveLetter.replace(':', '').toUpperCase() : '';
+    for (const p of selectedPaths) {
+      const cleanP = p.replace(':', '').toUpperCase();
+      if (driveLetterUpper && cleanP.startsWith(driveLetterUpper)) {
+        setErrorMessage(
+          `Unsafe folder selection: "${p}" is on the backup drive (${drive.driveLetter}) itself. Please choose folders on your local computer to protect.`
+        );
+        return;
+      }
     }
 
     onComplete({
@@ -180,6 +200,15 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
               <span>Hardware: {drive.deviceModel}</span>
               <span aria-hidden="true">·</span>
               <span className="font-mono">Drive {drive.driveLetter}</span>
+              {drive.freeBytes !== undefined && drive.freeBytes > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-emerald-400 font-medium">
+                    {formatBytes(drive.freeBytes)} free
+                    {drive.totalBytes ? ` of ${formatBytes(drive.totalBytes)}` : ''}
+                  </span>
+                </>
+              )}
               {drive.volumeSerial && (
                 <>
                   <span aria-hidden="true">·</span>
@@ -328,6 +357,30 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
                 Preserve historical revisions of modified files in VERSIONS
               </span>
             </label>
+          </div>
+
+          {/* Step 4: Configuration Review */}
+          <div className="p-3 bg-[#081126] border border-[#1E3466] rounded-xl space-y-2 text-xs">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[#F4A62A]">
+              Configuration Review
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div>
+                <span className="text-slate-400">Destination:</span>
+                <p className="font-mono text-white truncate">{drive.driveLetter}\DERO_VAULT_BACKUP</p>
+              </div>
+              <div>
+                <span className="text-slate-400">Protected Sources:</span>
+                <p className="font-semibold text-white">
+                  {selectedPaths.length} folder{selectedPaths.length === 1 ? '' : 's'} selected
+                </p>
+              </div>
+            </div>
+            {drive.freeBytes !== undefined && drive.freeBytes > 0 && drive.freeBytes < 50 * 1024 * 1024 && (
+              <div className="p-2 bg-amber-950/60 border border-amber-800/60 rounded text-[11px] text-amber-300">
+                Warning: Low free space detected on {drive.driveLetter} ({formatBytes(drive.freeBytes)} free). Ensure there is sufficient room for your files.
+              </div>
+            )}
           </div>
 
           {/* Actions */}

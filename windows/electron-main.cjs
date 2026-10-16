@@ -367,6 +367,7 @@ function openRegistrationForDrive(drive) {
   if (targetDrive) {
     lastUnregisteredDrive = targetDrive;
     pendingRegistrationDrive = targetDrive;
+    appState.pendingRegistrationDrive = targetDrive;
   }
 
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -397,10 +398,12 @@ function openRegistrationForDrive(drive) {
     if (mainWindow.webContents.isLoading()) {
       console.log(`[MainAction] Renderer is still loading. Queuing open-registration event on did-finish-load.`);
       mainWindow.webContents.once('did-finish-load', () => {
-        dispatchEvents();
+        setTimeout(dispatchEvents, 100);
       });
     } else {
       dispatchEvents();
+      // Reinforce dispatch after 150ms to ensure React hooks have mounted if window was hidden
+      setTimeout(dispatchEvents, 150);
     }
   }
 }

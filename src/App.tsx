@@ -61,8 +61,8 @@ export default function App() {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
 
-  // TRAY-FIRST UX: Default to compact/tray mode
-  const [isMinimizedToTray, setIsMinimizedToTray] = useState(true);
+  // Default to full dashboard view when window is opened
+  const [isMinimizedToTray, setIsMinimizedToTray] = useState(false);
   const [trayNotification, setTrayNotification] = useState<TrayNotificationState>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -380,7 +380,11 @@ export default function App() {
       await refreshAll();
       handleStartManualBackup(data.stableHardwareId);
     } catch (err: any) {
-      alert(`Failed to register drive: ${err.message}`);
+      setTrayNotification({
+        type: 'error',
+        title: 'Registration Failed',
+        message: err.message || 'Could not register drive.',
+      });
     }
   };
 
@@ -389,22 +393,24 @@ export default function App() {
       await ApiClient.updateDrive(stableId, { friendlyName: partial.friendlyName });
       refreshAll();
     } catch (err: any) {
-      alert(`Failed to update drive: ${err.message}`);
+      setTrayNotification({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Could not update drive.',
+      });
     }
   };
 
   const handleUnregisterDrive = async (stableId: string) => {
-    if (
-      confirm(
-        'Are you sure you want to unregister this drive? Existing backup files on the drive will be kept safe.'
-      )
-    ) {
-      try {
-        await ApiClient.unregisterDrive(stableId);
-        refreshAll();
-      } catch (err: any) {
-        alert(`Failed to unregister drive: ${err.message}`);
-      }
+    try {
+      await ApiClient.unregisterDrive(stableId);
+      refreshAll();
+    } catch (err: any) {
+      setTrayNotification({
+        type: 'error',
+        title: 'Unregister Failed',
+        message: err.message || 'Could not unregister drive.',
+      });
     }
   };
 
@@ -413,7 +419,11 @@ export default function App() {
       await ApiClient.updateDrive(driveStableId, updates);
       refreshAll();
     } catch (err: any) {
-      alert(`Failed to update profile: ${err.message}`);
+      setTrayNotification({
+        type: 'error',
+        title: 'Profile Update Failed',
+        message: err.message || 'Could not update profile.',
+      });
     }
   };
 
@@ -422,7 +432,11 @@ export default function App() {
       const updated = await ApiClient.updateSettings(updates);
       setSettings(updated);
     } catch (err: any) {
-      alert(`Failed to update settings: ${err.message}`);
+      setTrayNotification({
+        type: 'error',
+        title: 'Settings Update Failed',
+        message: err.message || 'Could not update settings.',
+      });
     }
   };
 

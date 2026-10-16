@@ -18,9 +18,9 @@
   "main": "windows/electron-main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs --external:electron --external:vite --external:koffi --external:@koromix/*",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist-server/server.cjs --external:electron --external:vite --external:koffi --external:@koromix/* && esbuild server.ts --bundle --platform=node --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs --external:electron --external:vite --external:koffi --external:@koromix/*",
     "build:frontend": "vite build",
-    "build:server": "esbuild server.ts --bundle --platform=node --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs --external:electron --external:vite --external:koffi --external:@koromix/*",
+    "build:server": "esbuild server.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist-server/server.cjs --external:electron --external:vite --external:koffi --external:@koromix/* && esbuild server.ts --bundle --platform=node --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs --external:electron --external:vite --external:koffi --external:@koromix/*",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
     "package:win": "electron-builder --win --x64 --publish never",
     "package:mac": "electron-builder --mac --publish never",

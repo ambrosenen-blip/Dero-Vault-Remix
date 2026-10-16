@@ -82,6 +82,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(true);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   // Initialize registration defaults whenever an unregistered drive notification arrives
   useEffect(() => {
@@ -120,9 +121,10 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
     e.preventDefault();
     if (notification.type !== 'unregistered') return;
     if (selectedFolders.length === 0) {
-      alert('Please select at least one folder to protect.');
+      setRegisterError('Please select at least one folder to protect.');
       return;
     }
+    setRegisterError(null);
 
     try {
       setIsRegistering(true);
@@ -184,6 +186,12 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
           <p className="text-xs text-slate-300 leading-snug">
             Would you like Dero Vault to protect your files on this drive?
           </p>
+
+          {registerError && (
+            <div className="p-2 bg-rose-950/70 border border-rose-800/80 rounded text-[11px] text-rose-300">
+              {registerError}
+            </div>
+          )}
 
           {/* Quick Registration Form */}
           <form onSubmit={handleRegisterSubmit} className="space-y-3 pt-1">

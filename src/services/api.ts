@@ -4,11 +4,19 @@
 
 import { AppLogEntry, AppSettings, BackupProfile, BackupSession, PlatformInfo, RemovableDrive, SourceFolderOption } from '../types';
 
+const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+    return 'http://127.0.0.1:3000';
+  }
+  return '';
+};
+
 export class ApiClient {
   private static eventSource: EventSource | null = null;
 
   private static async safeFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, init);
+    const fullUrl = url.startsWith('http') ? url : `${getApiBaseUrl()}${url}`;
+    const res = await fetch(fullUrl, init);
     const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
       if (contentType.includes('application/json')) {
@@ -18,7 +26,7 @@ export class ApiClient {
       throw new Error(`HTTP ${res.status}`);
     }
     if (!contentType.includes('application/json')) {
-      throw new Error(`Expected JSON from ${url}, received: ${contentType}`);
+      throw new Error(`Expected JSON from ${fullUrl}, received: ${contentType}`);
     }
     return res.json();
   }
