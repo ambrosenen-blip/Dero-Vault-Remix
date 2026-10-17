@@ -22,8 +22,11 @@ import { PlatformService } from './server/platform/index.js';
 const execAsync = promisify(exec);
 const getModuleDir = () => {
   try {
-    if (typeof import.meta !== 'undefined' && import.meta.url) {
-      return path.dirname(fileURLToPath(import.meta.url));
+    if (typeof (globalThis as any).__dirname !== 'undefined' && (globalThis as any).__dirname) {
+      return (globalThis as any).__dirname;
+    }
+    if (typeof import.meta !== 'undefined' && (import.meta as any).url) {
+      return path.dirname(fileURLToPath((import.meta as any).url));
     }
   } catch {}
   return process.cwd();

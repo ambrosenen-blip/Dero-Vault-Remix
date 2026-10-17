@@ -9,6 +9,12 @@ const path = require('path');
 const http = require('http');
 const { fork } = require('child_process');
 
+// Determine execution environment and ensure NODE_ENV is set correctly
+if (app.isPackaged || !process.env.NODE_ENV) {
+  process.env.NODE_ENV = app.isPackaged ? 'production' : (process.env.NODE_ENV || 'development');
+}
+console.log(`[Main] [${new Date().toISOString()}] Electron starting: isPackaged=${app.isPackaged}, NODE_ENV=${process.env.NODE_ENV}, platform=${process.platform}`);
+
 // On Windows, setting AppUserModelId is required for Windows toast notifications to display correctly
 // and route click activation back to the application.
 if (process.platform === 'win32') {
@@ -215,8 +221,10 @@ function removeDeviceFromState(deviceIdentifier, reason) {
         }
       }
 
-      if (!physicallyPresent) {
-        console.log(`[State] [${new Date().toISOString()}] Confirmed physical disconnect of ${d.driveLetter} (${d.stableHardwareId}). Removing from authoritative state.`);
+      // If Windows explicitly reported removal (e.g. 0x8004) or the mount path is gone
+      const isExplicitRemoval = reason && reason.includes('0x8004');
+      if (!physicallyPresent || isExplicitRemoval) {
+        console.log(`[State] [${new Date().toISOString()}] Disconnect confirmed for ${d.driveLetter} (${d.stableHardwareId}). Removing from authoritative state.`);
         appState.connectedDrives.delete(id);
         if (appState.pendingRegistrationDrive && (
           appState.pendingRegistrationDrive.stableHardwareId === d.stableHardwareId ||
@@ -226,6 +234,9 @@ function removeDeviceFromState(deviceIdentifier, reason) {
           pendingRegistrationDrive = null;
           lastUnregisteredDrive = null;
         }
+        // Reset balloon debounce so re-inserting the same device will notify immediately
+        lastBalloonContent = '';
+        lastBalloonTime = 0;
       } else {
         console.log(`[State] [${new Date().toISOString()}] Ignored removal for ${d.driveLetter} (${d.stableHardwareId}): Drive is still physically mounted at ${d.mountPath}!`);
       }
@@ -746,7 +757,6 @@ function createWindow() {
   });
 
   const appUrl = `http://127.0.0.1:${SERVER_PORT}`;
-  console.log(`[Main] [${new Date().toISOString()}] Loading renderer from ${appUrl}`);
 
   mainWindow.webContents.on('did-finish-load', () => {
     console.log(`[Main] [${new Date().toISOString()}] did-finish-load: URL=${mainWindow.webContents.getURL()}`);
@@ -769,7 +779,7 @@ function createWindow() {
     console.log(`[RendererConsole] [${levelName}] ${message} (${path.basename(sourceId || '')}:${line})`);
   });
 
-  function loadLocalFallback() {
+  function resolveLocalIndexHtml() {
     const fs = require('fs');
     const localIndexCandidates = [
       path.join(__dirname, '..', 'dist', 'index.html'),
@@ -783,42 +793,40 @@ function createWindow() {
     ];
     for (const p of localIndexCandidates) {
       if (fs.existsSync(p)) {
-        console.log(`[Main] [${new Date().toISOString()}] Loading local fallback file: ${p}`);
-        mainWindow.loadFile(p);
-        return;
+        return p;
       }
     }
-    console.error(`[Main] [${new Date().toISOString()}] Could not find local index.html in any candidate location.`);
-    showTrayNotification({
-      title: 'Dero Vault',
-      content: 'Could not load UI: static build files not found.',
-      type: 'error',
+    return null;
+  }
+
+  const localIndexPath = resolveLocalIndexHtml();
+
+  if (app.isPackaged && localIndexPath) {
+    console.log(`[Main] [${new Date().toISOString()}] Packaged application detected: loading local production bundle: ${localIndexPath}`);
+    mainWindow.loadFile(localIndexPath).catch((err) => {
+      console.error(`[Main] [${new Date().toISOString()}] loadFile failed: ${err.message}. Trying ${appUrl}`);
+      mainWindow.loadURL(appUrl);
+    });
+  } else {
+    console.log(`[Main] [${new Date().toISOString()}] Loading renderer from ${appUrl}`);
+    mainWindow.loadURL(appUrl).catch((err) => {
+      console.warn(`[Main] [${new Date().toISOString()}] Initial loadURL failed: ${err.message}. Attempting local file fallback...`);
+      if (localIndexPath) {
+        console.log(`[Main] [${new Date().toISOString()}] Loading local file fallback: ${localIndexPath}`);
+        mainWindow.loadFile(localIndexPath);
+      }
     });
   }
 
-  mainWindow.loadURL(appUrl).catch((err) => {
-    console.error(`[Main] [${new Date().toISOString()}] Initial loadURL failed: ${err.message}. Attempting local file fallback...`);
-    loadLocalFallback();
-  });
-
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     console.error(`[Main] [${new Date().toISOString()}] did-fail-load: code=${errorCode}, description="${errorDescription}", url=${validatedURL}, isMainFrame=${isMainFrame}`);
-    showTrayNotification({
-      title: 'Dero Vault',
-      content: `Failed to load application interface (${errorDescription}). Retrying...`,
-      type: 'error',
-    });
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        pingServer(SERVER_PORT).then((alive) => {
-          if (alive) {
-            mainWindow.loadURL(appUrl);
-          } else {
-            loadLocalFallback();
-          }
-        });
+    if (isMainFrame) {
+      const fallback = resolveLocalIndexHtml();
+      if (fallback) {
+        console.log(`[Main] [${new Date().toISOString()}] did-fail-load recovering by loading local bundle: ${fallback}`);
+        mainWindow.loadFile(fallback);
       }
-    }, 1500);
+    }
   });
 
   // Windows-specific: Listen for native hardware arrival/removal events (WM_DEVICECHANGE: 0x0219).
@@ -1110,20 +1118,22 @@ function createWindow() {
                 addOrUpdateConnectedDrive(matched);
                 if (matched.isRegistered) {
                   syncTrayState(`fast-path arrival registered (${matched.driveLetter})`);
+                  showTrayNotification({
+                    title: 'Dero Vault',
+                    content: `Registered drive "${matched.friendlyName || matched.volumeLabel}" connected. Automatic backup starting.`,
+                  });
                 } else {
                   appState.pendingRegistrationDrive = matched;
                   pendingRegistrationDrive = matched;
                   lastUnregisteredDrive = matched;
                   syncTrayState(`fast-path arrival unregistered (${matched.driveLetter})`);
-                  if (!wasConnected) {
-                    console.log(`[Main] [${new Date().toISOString()}] Triggering fresh arrival notification for ${matched.driveLetter}`);
-                    showTrayNotification({
-                      title: 'Dero Vault',
-                      content: `New removable storage: ${matched.volumeLabel || 'Disk'} (${matched.driveLetter}). Click to configure.`,
-                      drive: matched,
-                      onClick: () => openRegistrationForDrive(matched),
-                    });
-                  }
+                  console.log(`[Main] [${new Date().toISOString()}] Triggering arrival notification for ${matched.driveLetter} (${matched.volumeLabel})`);
+                  showTrayNotification({
+                    title: 'Dero Vault',
+                    content: `New removable storage: ${matched.volumeLabel || 'Disk'} (${matched.driveLetter}). Click to configure.`,
+                    drive: matched,
+                    onClick: () => openRegistrationForDrive(matched),
+                  });
                 }
                 return; // Reached terminal state in well under 300-500ms! No retry needed!
               }
@@ -1157,7 +1167,15 @@ function createWindow() {
         req.write(postData);
         req.end();
       } else if (wParamNum === 0x0007) {
-        console.log(`[Main] [${new Date().toISOString()}] Devnodes changed (0x0007). Running non-destructive reconciliation without erasing valid state.`);
+        console.log(`[Main] [${new Date().toISOString()}] Devnodes changed (0x0007). Reconciling drive presence.`);
+        // Purge any drives whose mount paths no longer physically exist
+        const fs = require('fs');
+        for (const [id, d] of Array.from(appState.connectedDrives.entries())) {
+          if (d.mountPath && !fs.existsSync(d.mountPath)) {
+            console.log(`[Main] Devnodes changed: drive ${d.driveLetter} (${id}) is physically absent. Removing.`);
+            removeDeviceFromState(d.driveLetter, 'wm_devnodes_changed:absent');
+          }
+        }
         requestDriveRescan(SERVER_PORT, 'wm-devnodes-changed').then((res) => {
           if (res && Array.isArray(res.drives) && res.drives.length > 0) {
             for (const d of res.drives) {

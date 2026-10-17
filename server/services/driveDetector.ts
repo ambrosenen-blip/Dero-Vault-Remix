@@ -259,7 +259,12 @@ export class DriveDetector extends EventEmitter {
     // Check newly connected or updated drives
     for (const [stableId, drive] of reconciledDrives.entries()) {
       const previous = this.activeDrives.get(stableId);
-      const isNewConnection = !previous || !previous.isConnected;
+      const isExplicitArrival = Boolean(
+        hintDriveLetter &&
+        drive.driveLetter &&
+        drive.driveLetter.toUpperCase().startsWith(hintDriveLetter.toUpperCase().replace(/[^a-zA-Z]/g, ''))
+      );
+      const isNewConnection = !previous || !previous.isConnected || isExplicitArrival;
 
       // Check if this physical drive is already registered in local database
       const registered = this.db.getRegisteredDriveByStableId(stableId);
