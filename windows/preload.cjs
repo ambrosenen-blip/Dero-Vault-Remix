@@ -32,6 +32,16 @@ try {
     getPendingRegistrationDrive: () => ipcRenderer.invoke('app:getPendingRegistrationDrive'),
     clearPendingRegistrationDrive: () => ipcRenderer.invoke('app:clearPendingRegistrationDrive'),
     dismissRegistration: (stableHardwareId) => ipcRenderer.invoke('app:dismissRegistration', stableHardwareId),
+    onBackupUpdate: (callback) => {
+      const handler = (_event, session) => callback(session);
+      ipcRenderer.on('backup:update', handler);
+      return () => ipcRenderer.removeListener('backup:update', handler);
+    },
+    onBackupComplete: (callback) => {
+      const handler = (_event, session) => callback(session);
+      ipcRenderer.on('backup:complete', handler);
+      return () => ipcRenderer.removeListener('backup:complete', handler);
+    },
   });
 
   console.log(`[Preload] [${new Date().toISOString()}] electronAPI bridge successfully exposed in main world.`);

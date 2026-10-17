@@ -170,53 +170,113 @@ export class ApiClient {
   }): () => void {
     if (this.eventSource) {
       this.eventSource.close();
+      this.eventSource = null;
     }
 
-    const es = new EventSource('/api/events');
-    this.eventSource = es;
+    const sseUrl = `${getApiBaseUrl()}/api/events`;
+    console.log(`[ApiClient] Connecting to event stream at: ${sseUrl}`);
 
-    es.addEventListener('drive:connected', (e) => {
-      callbacks.onConnected?.(JSON.parse(e.data));
-    });
+    let es: EventSource | null = null;
+    let isClosed = false;
+    let reconnectTimer: NodeJS.Timeout | null = null;
 
-    es.addEventListener('drive:unregistered_detected', (e) => {
-      callbacks.onUnregisteredDetected?.(JSON.parse(e.data));
-    });
+    const connectSSE = () => {
+      if (isClosed) return;
+      try {
+        es = new EventSource(sseUrl);
+        this.eventSource = es;
 
-    es.addEventListener('drive:disconnected', (e) => {
-      callbacks.onDisconnected?.(JSON.parse(e.data));
-    });
+        es.onopen = () => {
+          console.log(`[ApiClient] SSE event stream connected successfully (${sseUrl})`);
+        };
 
-    es.addEventListener('drive:updated', (e) => {
-      callbacks.onDriveUpdated?.(JSON.parse(e.data));
-    });
+        es.onerror = (err) => {
+          console.warn(`[ApiClient] SSE stream connection error, will retry in 3s:`, err);
+          if (es) {
+            es.close();
+            es = null;
+          }
+          if (!isClosed && !reconnectTimer) {
+            reconnectTimer = setTimeout(() => {
+              reconnectTimer = null;
+              connectSSE();
+            }, 3000);
+          }
+        };
 
-    es.addEventListener('drive:registered', (e) => {
-      callbacks.onDriveRegistered?.(JSON.parse(e.data));
-    });
+        es.addEventListener('drive:connected', (e) => {
+          try { callbacks.onConnected?.(JSON.parse(e.data)); } catch {}
+        });
 
-    es.addEventListener('drive:unregistered', (e) => {
-      callbacks.onDriveUnregistered?.(JSON.parse(e.data));
-    });
+        es.addEventListener('drive:unregistered_detected', (e) => {
+          try { callbacks.onUnregisteredDetected?.(JSON.parse(e.data)); } catch {}
+        });
 
-    es.addEventListener('backup:start', (e) => {
-      callbacks.onBackupStart?.(JSON.parse(e.data));
-    });
+        es.addEventListener('drive:disconnected', (e) => {
+          try { callbacks.onDisconnected?.(JSON.parse(e.data)); } catch {}
+        });
 
-    es.addEventListener('backup:update', (e) => {
-      callbacks.onBackupUpdate?.(JSON.parse(e.data));
-    });
+        es.addEventListener('drive:updated', (e) => {
+          try { callbacks.onDriveUpdated?.(JSON.parse(e.data)); } catch {}
+        });
 
-    es.addEventListener('backup:complete', (e) => {
-      callbacks.onBackupComplete?.(JSON.parse(e.data));
-    });
+        es.addEventListener('drive:registered', (e) => {
+          try { callbacks.onDriveRegistered?.(JSON.parse(e.data)); } catch {}
+        });
 
-    es.addEventListener('settings:updated', (e) => {
-      callbacks.onSettingsUpdated?.(JSON.parse(e.data));
-    });
+        es.addEventListener('drive:unregistered', (e) => {
+          try { callbacks.onDriveUnregistered?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('backup:start', (e) => {
+          try { callbacks.onBackupStart?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('backup:update', (e) => {
+          try { callbacks.onBackupUpdate?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('backup:complete', (e) => {
+          try { callbacks.onBackupComplete?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('settings:updated', (e) => {
+          try { callbacks.onSettingsUpdated?.(JSON.parse(e.data)); } catch {}
+        });
+      } catch (connErr) {
+        console.warn(`[ApiClient] Failed to instantiate EventSource:`, connErr);
+      }
+    };
+
+    connectSSE();
+
+    // Secondary channel: Wire Electron IPC listeners if running in desktop environment
+    const ipcCleanups: (() => void)[] = [];
+    if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const api = (window as any).electronAPI;
+      if (typeof api.onBackupUpdate === 'function') {
+        const cleanup = api.onBackupUpdate((session: BackupSession) => {
+          callbacks.onBackupUpdate?.(session);
+        });
+        ipcCleanups.push(cleanup);
+      }
+      if (typeof api.onBackupComplete === 'function') {
+        const cleanup = api.onBackupComplete((session: BackupSession) => {
+          callbacks.onBackupComplete?.(session);
+        });
+        ipcCleanups.push(cleanup);
+      }
+    }
 
     return () => {
-      es.close();
+      isClosed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) {
+        es.close();
+        es = null;
+      }
+      this.eventSource = null;
+      ipcCleanups.forEach(c => { try { c(); } catch {} });
     };
   }
 }

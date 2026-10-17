@@ -342,10 +342,17 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
       {/* 3. BACKUP IN PROGRESS: Smadav-style compact live progress */}
       {notification.type === 'backing_up' && (() => {
         const session = notification.session;
+        const totalPlanned =
+          (session.newFilesCount + session.modifiedFilesCount) > 0
+            ? session.newFilesCount + session.modifiedFilesCount
+            : session.filesScanned > 0
+            ? session.filesScanned
+            : 0;
+
         const percent = session.bytesTotal > 0
           ? Math.round((session.bytesTransferred / session.bytesTotal) * 100)
-          : session.filesScanned > 0
-          ? Math.round((session.filesCopied / session.filesScanned) * 100)
+          : totalPlanned > 0
+          ? Math.round((session.filesCopied / totalPlanned) * 100)
           : 0;
 
         const actionText =
@@ -359,6 +366,15 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             ? 'Verifying file integrity…'
             : 'Backing up your office…';
 
+        const displayBadge =
+          session.status === 'scanning'
+            ? 'Scanning...'
+            : session.status === 'comparing'
+            ? 'Comparing...'
+            : session.status === 'verifying'
+            ? 'Verifying...'
+            : `${Math.min(100, Math.max(0, percent))}%`;
+
         return (
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between">
@@ -370,7 +386,7 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white">DERO VAULT</h4>
                     <span className="text-[10px] font-mono font-bold text-[#F4A62A] bg-[#162852] px-1.5 py-0.2 rounded border border-[#1E3466]">
-                      {Math.max(1, Math.min(100, percent))}%
+                      {displayBadge}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 truncate max-w-[200px]">
@@ -402,12 +418,21 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
               <div className="w-full h-2 rounded-full bg-[#081126] overflow-hidden border border-[#1E3466]">
                 <div
                   className="h-full bg-gradient-to-r from-[#F4A62A] to-[#FBBF24] transition-all duration-300"
-                  style={{ width: `${Math.min(100, Math.max(3, percent))}%` }}
+                  style={{
+                    width:
+                      session.status === 'scanning' || session.status === 'comparing'
+                        ? '15%'
+                        : session.status === 'verifying'
+                        ? '98%'
+                        : `${Math.min(100, Math.max(3, percent))}%`,
+                  }}
                 />
               </div>
               <div className="flex justify-between items-center text-[10px] text-slate-300 font-mono">
                 <span>
-                  {session.filesCopied} / {session.filesScanned || session.filesCopied} files
+                  {session.status === 'scanning'
+                    ? `${session.filesScanned.toLocaleString()} files scanned`
+                    : `${session.filesCopied.toLocaleString()} / ${Math.max(session.filesCopied, totalPlanned).toLocaleString()} files`}
                 </span>
                 <span>
                   {formatBytes(session.bytesTransferred)} / {formatBytes(session.bytesTotal)}

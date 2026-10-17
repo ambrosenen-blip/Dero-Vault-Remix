@@ -175,9 +175,16 @@ export default function App() {
     if ((window as any).electronAPI?.onExpand) {
       const cleanupExpand = (window as any).electronAPI.onExpand(() => {
         setIsMinimizedToTray(false);
+        refreshAll();
       });
       cleanups.push(cleanupExpand);
     }
+
+    const handleFocus = () => {
+      refreshAll();
+    };
+    window.addEventListener('focus', handleFocus);
+    cleanups.push(() => window.removeEventListener('focus', handleFocus));
 
     // Listen for native Electron "drive:open-registration" (from notification click or tray click)
     if ((window as any).electronAPI?.onOpenRegistration) {
@@ -315,6 +322,56 @@ export default function App() {
     };
 
   }, []);
+
+  // Authoritative background reconciliation: Poll active backup session while running
+  useEffect(() => {
+    const isRunning =
+      currentSession !== null &&
+      ['scanning', 'comparing', 'copying', 'verifying'].includes(currentSession.status);
+    if (!isRunning) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { session: serverSession, isRunning: stillRunning } = await ApiClient.getCurrentBackup();
+        if (serverSession) {
+          setCurrentSession(serverSession);
+          if (stillRunning) {
+            setTrayNotification((prev) =>
+              prev?.type === 'backing_up' ? { ...prev, session: serverSession } : prev
+            );
+          } else if (['completed', 'completed_with_errors'].includes(serverSession.status)) {
+            setTrayNotification({
+              type: 'complete',
+              session: serverSession,
+              driveName: serverSession.driveName,
+            });
+            ApiClient.getHistory().then(setHistory);
+          } else if (['failed', 'interrupted', 'stopped_insufficient_space'].includes(serverSession.status)) {
+            setTrayNotification({
+              type: 'error',
+              title: serverSession.status === 'interrupted' ? 'Backup Interrupted' : 'Backup Failed',
+              message: serverSession.errors?.[0]?.error || 'The backup could not be completed.',
+              session: serverSession,
+            });
+            ApiClient.getHistory().then(setHistory);
+          }
+        }
+      } catch (err) {
+        console.warn('[App] Active backup poll error:', err);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentSession?.status]);
+
+  // Tab switch synchronization (especially for History tab)
+  useEffect(() => {
+    if (currentTab === 'history') {
+      ApiClient.getHistory().then(setHistory).catch((err) => {
+        console.warn('[App] Failed to load history on tab switch:', err);
+      });
+    }
+  }, [currentTab]);
 
   const handleStartManualBackup = async (stableHardwareId?: string) => {
     try {

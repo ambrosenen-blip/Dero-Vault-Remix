@@ -85,10 +85,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       progressPercent = 100;
     } else if (currentSession.bytesTotal > 0) {
       progressPercent = Math.min(99.9, (currentSession.bytesTransferred / currentSession.bytesTotal) * 100);
-    } else if (currentSession.status === 'copying' && currentSession.filesScanned > 0) {
-      progressPercent = Math.min(99.9, (currentSession.filesCopied / Math.max(1, currentSession.filesScanned)) * 100);
+    } else if (currentSession.status === 'copying') {
+      const planned = (currentSession.newFilesCount + currentSession.modifiedFilesCount) || currentSession.filesScanned || 0;
+      progressPercent = planned > 0 ? Math.min(99.9, (currentSession.filesCopied / planned) * 100) : 5;
     } else if (currentSession.status === 'verifying') {
       progressPercent = 99.5;
+    } else if (currentSession.status === 'scanning' || currentSession.status === 'comparing') {
+      progressPercent = 0;
     }
   }
 
@@ -151,8 +154,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </span>
               <div className="flex items-center gap-3 text-xs text-slate-300">
                 <span className="font-mono tabular-nums">
-                  {currentSession.filesCopied.toLocaleString()} /{' '}
-                  {(currentSession.newFilesCount + currentSession.modifiedFilesCount || currentSession.filesScanned || 1).toLocaleString()} files
+                  {currentSession.status === 'scanning'
+                    ? `${currentSession.filesScanned.toLocaleString()} files scanned`
+                    : `${currentSession.filesCopied.toLocaleString()} / ${(currentSession.newFilesCount + currentSession.modifiedFilesCount || currentSession.filesScanned || Math.max(1, currentSession.filesCopied)).toLocaleString()} files`}
                 </span>
                 <span aria-hidden="true">·</span>
                 <span className="font-mono tabular-nums">

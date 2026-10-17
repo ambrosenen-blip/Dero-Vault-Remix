@@ -33,7 +33,11 @@ const getModuleDir = () => {
 };
 const __dirname = getModuleDir();
 
-export async function createDeroVaultServer(customPort?: number) {
+export interface DeroVaultServerOptions {
+  onEvent?: (eventType: string, data: any) => void;
+}
+
+export async function createDeroVaultServer(customPort?: number, options?: DeroVaultServerOptions) {
   const app = express();
   const server = http.createServer(app);
   const port = customPort || process.env.PORT || 3000;
@@ -61,15 +65,40 @@ export async function createDeroVaultServer(customPort?: number) {
 
   const broadcastEvent = (eventType: string, data: any) => {
     console.log(`[IPC-Bridge] [${new Date().toISOString()}] Forwarding event to ${sseClients.size} SSE client(s): ${eventType}`);
+    // 1. Direct in-process notification for embedded Electron main process
+    try {
+      if (options?.onEvent) {
+        options.onEvent(eventType, data);
+      }
+    } catch (err: any) {
+      console.error(`[IPC-Bridge] [${new Date().toISOString()}] Error in onEvent listener: ${err.message}`);
+    }
+
+    // 2. HTTP Server-Sent Events stream for network/browser clients
     const payload = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const client of sseClients) {
       try {
         client.write(payload);
+        if (typeof (client as any).flush === 'function') {
+          (client as any).flush();
+        }
       } catch {
         sseClients.delete(client);
       }
     }
   };
+
+  // Heartbeat to keep SSE clients alive across OS/firewall boundaries
+  const heartbeatInterval = setInterval(() => {
+    const pingPayload = `: ping\n\n`;
+    for (const client of sseClients) {
+      try {
+        client.write(pingPayload);
+      } catch {
+        sseClients.delete(client);
+      }
+    }
+  }, 15000);
 
   // Wire Engine & Detector events
   driveDetector.on('drive:connected', async (drive: RemovableDrive) => {

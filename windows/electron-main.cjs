@@ -311,7 +311,7 @@ function syncTrayState(reason) {
     const drives = Array.from(appState.connectedDrives.values());
     const regDrive = drives.find((d) => d.isRegistered);
     if (regDrive) {
-      newStatus = `Dero Vault — Backing up ${regDrive.friendlyName || regDrive.volumeLabel} (${regDrive.driveLetter})...`;
+      newStatus = `Dero Vault — Protected (${regDrive.friendlyName || regDrive.volumeLabel} [${regDrive.driveLetter}])`;
     } else {
       const unreg = drives.find((d) => !d.isRegistered);
       if (unreg) {
@@ -504,9 +504,20 @@ function showTrayNotification(opts) {
   }
 }
 
+const sseHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 5, keepAliveMsecs: 10000 });
+
 function subscribeToBackendEvents() {
   console.log(`[Tray] [${new Date().toISOString()}] Connecting main process to backend event stream (SSE)...`);
-  const req = http.get(`http://127.0.0.1:${SERVER_PORT}/api/events`, (res) => {
+  const req = http.get({
+    hostname: '127.0.0.1',
+    port: SERVER_PORT,
+    path: '/api/events',
+    agent: sseHttpAgent,
+    headers: {
+      'Accept': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    },
+  }, (res) => {
     let buffer = '';
     res.on('data', (chunk) => {
       buffer += chunk.toString();
@@ -532,6 +543,7 @@ function subscribeToBackendEvents() {
     });
   });
 
+  req.setTimeout(0);
   req.on('error', (err) => {
     console.log(`[Tray] [${new Date().toISOString()}] SSE connection error: ${err.message}. Retrying in 2s...`);
     setTimeout(subscribeToBackendEvents, 2000);
@@ -631,17 +643,36 @@ function handleBackendStateChange(eventType, data) {
     console.log(`[Tray] [${new Date().toISOString()}] Storage device disconnected event for ${drive.driveLetter} (${drive.stableHardwareId})`);
     removeDeviceFromState(drive.stableHardwareId || drive.driveLetter, 'sse:drive:disconnected');
   } else if (eventType === 'backup:start' && data) {
-    appState.activeBackup = { status: 'running', driveName: data.driveName };
-    syncTrayState(`backup:start (${data.driveName})`);
-  } else if (eventType === 'backup:update' && data) {
     appState.activeBackup = {
       status: 'running',
       driveName: data.driveName,
-      filesProcessed: data.filesProcessed,
-      totalFiles: data.totalFiles,
-      progress: data.progress,
+      filesProcessed: 0,
+      totalFiles: 0,
+      progress: 0,
     };
-    syncTrayState(`backup:update (${data.driveName}: ${data.progress}%)`);
+    syncTrayState(`backup:start (${data.driveName})`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backup:update', data);
+    }
+  } else if (eventType === 'backup:update' && data) {
+    const totalFiles = (data.newFilesCount || 0) + (data.modifiedFilesCount || 0) || data.filesScanned || 0;
+    const filesProcessed = (data.filesCopied || 0) + (data.filesSkipped || 0);
+    const progress = data.bytesTotal > 0
+      ? Math.round((data.bytesTransferred / data.bytesTotal) * 100)
+      : (totalFiles > 0 ? Math.round((filesProcessed / totalFiles) * 100) : 0);
+
+    appState.activeBackup = {
+      status: 'running',
+      driveName: data.driveName,
+      filesProcessed,
+      totalFiles,
+      progress,
+    };
+    syncTrayState(`backup:update (${data.driveName}: ${progress}%)`);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backup:update', data);
+    }
   } else if (eventType === 'backup:complete' && data) {
     appState.activeBackup = null;
     syncTrayState('backup:complete');
@@ -649,6 +680,10 @@ function handleBackendStateChange(eventType, data) {
       title: 'Dero Vault',
       content: "✓ Today's work is safely backed up.",
     });
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backup:complete', data);
+    }
   }
 }
 
@@ -669,8 +704,12 @@ async function ensureServerRunning() {
   try {
     const serverModule = require(cjsServerPath);
     if (serverModule && typeof serverModule.createDeroVaultServer === 'function') {
-      await serverModule.createDeroVaultServer(SERVER_PORT);
-      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started in-process on port ${SERVER_PORT}`);
+      await serverModule.createDeroVaultServer(SERVER_PORT, {
+        onEvent: (eventType, data) => {
+          handleBackendStateChange(eventType, data);
+        },
+      });
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started in-process with direct event bridge on port ${SERVER_PORT}`);
       return;
     }
   } catch (cjsErr) {
@@ -684,8 +723,12 @@ async function ensureServerRunning() {
     const serverModuleUrl = pathToFileURL(esmServerPath).href;
     const serverModule = await import(serverModuleUrl);
     if (serverModule && typeof serverModule.createDeroVaultServer === 'function') {
-      await serverModule.createDeroVaultServer(SERVER_PORT);
-      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started via ESM import on port ${SERVER_PORT}`);
+      await serverModule.createDeroVaultServer(SERVER_PORT, {
+        onEvent: (eventType, data) => {
+          handleBackendStateChange(eventType, data);
+        },
+      });
+      console.log(`[Main] [${new Date().toISOString()}] Embedded server successfully started via ESM import with direct event bridge on port ${SERVER_PORT}`);
       return;
     }
   } catch (inProcErr) {
