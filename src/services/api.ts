@@ -232,8 +232,26 @@ export class ApiClient {
           try { callbacks.onBackupStart?.(JSON.parse(e.data)); } catch {}
         });
 
+        es.addEventListener('backup:catchup', (e) => {
+          try {
+            const session = JSON.parse(e.data);
+            if (['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space'].includes(session.status)) {
+              callbacks.onBackupComplete?.(session);
+            } else {
+              callbacks.onBackupUpdate?.(session);
+            }
+          } catch {}
+        });
+
         es.addEventListener('backup:update', (e) => {
-          try { callbacks.onBackupUpdate?.(JSON.parse(e.data)); } catch {}
+          try {
+            const session = JSON.parse(e.data);
+            if (['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space'].includes(session.status)) {
+              callbacks.onBackupComplete?.(session);
+            } else {
+              callbacks.onBackupUpdate?.(session);
+            }
+          } catch {}
         });
 
         es.addEventListener('backup:complete', (e) => {

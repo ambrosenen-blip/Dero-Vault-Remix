@@ -53,8 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         })}
       </div>
 
-      {/* Right: Download Desktop App Button */}
-      {onOpenDownloadModal && (
+      {/* Right: Download Desktop App Button (Only shown in browser/website context) */}
+      {onOpenDownloadModal && typeof window !== 'undefined' && !(window as any).electronAPI?.isElectron && (
         <button
           onClick={onOpenDownloadModal}
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] transition-all shadow-sm font-['Poppins',sans-serif] whitespace-nowrap shrink-0"

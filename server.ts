@@ -172,6 +172,15 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     sseClients.add(res);
     res.write(`event: handshake\ndata: ${JSON.stringify({ timestamp: new Date().toISOString() })}\n\n`);
 
+    // Immediate authoritative catch-up: Push current session state if one exists
+    const currentSession = backupEngine.getCurrentSession();
+    if (currentSession) {
+      res.write(`event: backup:catchup\ndata: ${JSON.stringify(currentSession)}\n\n`);
+    }
+    if (typeof (res as any).flush === 'function') {
+      (res as any).flush();
+    }
+
     _req.on('close', () => {
       sseClients.delete(res);
     });

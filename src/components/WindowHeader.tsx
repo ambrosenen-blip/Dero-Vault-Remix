@@ -74,7 +74,8 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
 
       {/* Right: Windows Controls */}
       <div className="flex items-center gap-1.5 -mr-1">
-        {onOpenDownloadModal && (
+        {/* Suppress download button in desktop app environment */}
+        {onOpenDownloadModal && typeof window !== 'undefined' && !(window as any).electronAPI?.isElectron && (
           <button
             onClick={onOpenDownloadModal}
             title="Download Installable Windows Software (.exe)"

@@ -132,6 +132,7 @@ export class BackupEngine extends EventEmitter {
 
     // Step 1: Scan configured source folders
     session.status = 'scanning';
+    this.db.saveBackupSession(session);
     this.emit('session:update', session);
 
     let scannedFiles: ScannedFile[] = [];
@@ -139,6 +140,7 @@ export class BackupEngine extends EventEmitter {
       scannedFiles = await FileScanner.scanFolders(profile.sourceFolders, (count, current) => {
         session.filesScanned = count;
         session.currentFile = current;
+        this.db.saveBackupSession(session);
         this.emit('session:update', session);
       });
     } catch (scanErr: any) {
@@ -150,18 +152,21 @@ export class BackupEngine extends EventEmitter {
         error: `Directory scan error: ${scanErr.message}`,
         timestamp: new Date().toISOString(),
       });
-      this.db.saveBackupSession(session);
+      this.db.saveBackupSession(session, true);
       this.emit('session:update', session);
+      this.emit('session:complete', session);
       return;
     }
 
     session.filesScanned = scannedFiles.length;
+    this.db.saveBackupSession(session);
     this.emit('session:update', session);
 
     if (this.isCancelled) return;
 
     // Step 2: Compare against destination to determine new/modified/skipped
     session.status = 'comparing';
+    this.db.saveBackupSession(session);
     this.emit('session:update', session);
 
     // Generate collision-safe timestamped revision folder for this session
@@ -186,8 +191,9 @@ export class BackupEngine extends EventEmitter {
         error: `File comparison error: ${compErr.message}`,
         timestamp: new Date().toISOString(),
       });
-      this.db.saveBackupSession(session);
+      this.db.saveBackupSession(session, true);
       this.emit('session:update', session);
+      this.emit('session:complete', session);
       return;
     }
 
@@ -196,6 +202,7 @@ export class BackupEngine extends EventEmitter {
     session.modifiedFilesCount = comparison.modifiedFiles.length;
     session.filesSkipped = comparison.skipped.length;
     session.bytesTotal = comparison.totalBytesToCopy;
+    this.db.saveBackupSession(session);
     this.emit('session:update', session);
 
     if (this.isCancelled) return;
@@ -399,8 +406,8 @@ export class BackupEngine extends EventEmitter {
 
     await this.generateBackupReport(destMountPath, session);
 
-    // Save final session to local database
-    this.db.saveBackupSession(session);
+    // Save final session to local database with immediate synchronous disk persistence
+    this.db.saveBackupSession(session, true);
     this.db.log(
       session.status === 'completed' ? 'success' : 'warn',
       'BackupEngine',
@@ -511,7 +518,11 @@ export class BackupEngine extends EventEmitter {
 
       await fs.promises.writeFile(txtReportPath, txtContent, 'utf-8');
       session.reportPath = jsonReportPath;
-    } catch {}
+      session.txtReportPath = txtReportPath;
+      session.reportSummary = txtContent;
+    } catch (err: any) {
+      this.db.log('warn', 'BackupEngine', `Failed to write backup report to ${destMountPath}: ${err.message}`);
+    }
   }
 
   private formatBytes(bytes: number): string {

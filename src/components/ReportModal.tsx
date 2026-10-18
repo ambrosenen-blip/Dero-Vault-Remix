@@ -137,12 +137,20 @@ export const ReportModal: React.FC<ReportModalProps> = ({ session, onClose }) =>
             <span className="text-slate-400">Data Transferred:</span>
             <span className="text-[#00A884] font-semibold">{formatBytes(session.bytesTransferred)}</span>
           </div>
-          <div className="flex justify-between py-1">
-            <span className="text-slate-400">Verification Status:</span>
+          <div className="flex justify-between py-1 border-b border-[#1E3466]/70">
+            <span className="text-slate-400">Verification Details:</span>
             <span className={session.isVerified ? 'text-[#00A884] font-semibold' : 'text-[#F4A62A]'}>
-              {session.isVerified ? 'Verified ✓ (Integrity confirmed)' : 'Standard / Skipped'}
+              {session.verificationNotes || (session.isVerified ? 'Verified ✓ (Integrity confirmed)' : 'Standard / Skipped')}
             </span>
           </div>
+          {(session.txtReportPath || session.reportPath) && (
+            <div className="flex flex-col sm:flex-row sm:justify-between py-1 gap-1 text-[11px]">
+              <span className="text-slate-400">Report on Drive:</span>
+              <span className="text-slate-300 font-mono truncate select-all max-w-sm" title={session.txtReportPath || session.reportPath}>
+                {session.txtReportPath || session.reportPath}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Errors Section */}

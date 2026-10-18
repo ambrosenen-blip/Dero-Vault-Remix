@@ -93,14 +93,32 @@ export default function App() {
       }
 
       if (backupData.session) {
-        setCurrentSession(backupData.session);
-        // If backup is active on startup, reflect it in tray
-        if (['scanning', 'comparing', 'copying', 'verifying'].includes(backupData.session.status)) {
+        const activeSession = backupData.session;
+        setCurrentSession(activeSession);
+        // Reflect in tray notification accurately based on authoritative status
+        if (['scanning', 'comparing', 'copying', 'verifying'].includes(activeSession.status)) {
           setTrayNotification({
             type: 'backing_up',
-            session: backupData.session,
-            driveName: backupData.session.driveName,
+            session: activeSession,
+            driveName: activeSession.driveName,
           });
+        } else if (['completed', 'completed_with_errors'].includes(activeSession.status)) {
+          setTrayNotification((prev) =>
+            prev?.type === 'backing_up'
+              ? { type: 'complete', session: activeSession, driveName: activeSession.driveName }
+              : prev
+          );
+        } else if (['failed', 'interrupted', 'stopped_insufficient_space'].includes(activeSession.status)) {
+          setTrayNotification((prev) =>
+            prev?.type === 'backing_up'
+              ? {
+                  type: 'error',
+                  title: activeSession.status === 'interrupted' ? 'Backup Interrupted' : 'Backup Failed',
+                  message: activeSession.errors?.[0]?.error || 'Backup could not be completed.',
+                  session: activeSession,
+                }
+              : prev
+          );
         }
       }
       setHistory(historyData || []);
@@ -280,9 +298,26 @@ export default function App() {
       },
       onBackupUpdate: (session) => {
         setCurrentSession(session);
-        setTrayNotification((prev) =>
-          prev?.type === 'backing_up' ? { ...prev, session } : prev
-        );
+        if (['completed', 'completed_with_errors'].includes(session.status)) {
+          setTrayNotification({
+            type: 'complete',
+            session,
+            driveName: session.driveName,
+          });
+          ApiClient.getHistory().then((h) => setHistory(h || []));
+        } else if (['failed', 'interrupted', 'stopped_insufficient_space'].includes(session.status)) {
+          setTrayNotification({
+            type: 'error',
+            title: session.status === 'interrupted' ? 'Backup Interrupted' : 'Backup Failed',
+            message: session.errors?.[0]?.error || 'Backup failed.',
+            session,
+          });
+          ApiClient.getHistory().then((h) => setHistory(h || []));
+        } else {
+          setTrayNotification((prev) =>
+            prev?.type === 'backing_up' ? { ...prev, session } : { type: 'backing_up', session, driveName: session.driveName }
+          );
+        }
       },
       onBackupComplete: (session) => {
         setCurrentSession(session);
@@ -548,10 +583,13 @@ export default function App() {
                 currentSession={currentSession}
                 activeDrives={activeDrives}
                 registeredDrives={registeredDrives}
+                backupProfiles={backupProfiles}
+                history={history}
                 onStartManualBackup={handleStartManualBackup}
                 onCancelBackup={handleCancelBackup}
                 onViewReport={(session) => setSelectedReportSession(session)}
                 onOpenRegisterModal={(drive) => setRegisterModalDrive(drive)}
+                onNavigateTab={(tab) => setCurrentTab(tab)}
                 onOpenDownloadModal={() => setIsDownloadOpen(true)}
               />
             )}
@@ -675,13 +713,15 @@ export default function App() {
               <span>Open Dero Vault Dashboard</span>
             </button>
 
-            <button
-              onClick={() => setIsDownloadOpen(true)}
-              className="px-5 py-2.5 text-xs font-semibold text-white bg-[#132247] hover:bg-[#1A2E5E] border border-[#1E3466] hover:border-[#F4A62A] rounded-xl transition-all flex items-center gap-2 font-['Poppins',sans-serif]"
-            >
-              <Download className="w-3.5 h-3.5 text-[#F4A62A]" />
-              <span>Download Desktop App (.exe)</span>
-            </button>
+            {typeof window !== 'undefined' && !(window as any).electronAPI?.isElectron && (
+              <button
+                onClick={() => setIsDownloadOpen(true)}
+                className="px-5 py-2.5 text-xs font-semibold text-white bg-[#132247] hover:bg-[#1A2E5E] border border-[#1E3466] hover:border-[#F4A62A] rounded-xl transition-all flex items-center gap-2 font-['Poppins',sans-serif]"
+              >
+                <Download className="w-3.5 h-3.5 text-[#F4A62A]" />
+                <span>Download Desktop App (.exe)</span>
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -35,7 +35,7 @@ export class FileScanner {
       const folderName = path.basename(folder) || 'Root';
       await this.scanRecursive(folder, folder, folderName, results, (count) => {
         scannedCount += count;
-        if (onProgress && scannedCount % 50 === 0) {
+        if (onProgress && (scannedCount <= 10 || scannedCount % 10 === 0)) {
           onProgress(scannedCount, folder);
         }
       });

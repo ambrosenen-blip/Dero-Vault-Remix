@@ -1,5 +1,6 @@
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { TrayPopoverApp } from './components/TrayPopoverApp.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
 
@@ -35,12 +36,13 @@ if (!rootEl) {
   `;
 } else {
   try {
+    const isTrayMode = window.location.hash === '#tray' || window.location.search.includes('mode=tray');
     createRoot(rootEl).render(
       <ErrorBoundary>
-        <App />
+        {isTrayMode ? <TrayPopoverApp /> : <App />}
       </ErrorBoundary>
     );
-    console.log(`[Renderer] [${new Date().toISOString()}] React DOM root mounted successfully.`);
+    console.log(`[Renderer] [${new Date().toISOString()}] React DOM root mounted successfully (mode=${isTrayMode ? 'tray' : 'main'}).`);
   } catch (err: any) {
     console.error(`[Renderer] [${new Date().toISOString()}] FATAL: createRoot render threw:`, err);
   }

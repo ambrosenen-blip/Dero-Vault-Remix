@@ -89,7 +89,19 @@ export class LocalDatabase {
       const tempPath = `${this.dbFilePath}.${Date.now()}.tmp`;
       const json = JSON.stringify(schema, null, 2);
       fs.writeFileSync(tempPath, json, 'utf-8');
-      fs.renameSync(tempPath, this.dbFilePath);
+      try {
+        fs.renameSync(tempPath, this.dbFilePath);
+      } catch (renameErr) {
+        // Fallback for Windows if destination file exists or renameSync throws EPERM/EEXIST
+        try {
+          fs.copyFileSync(tempPath, this.dbFilePath);
+          fs.unlinkSync(tempPath);
+        } catch {
+          // If fallback also fails, retry direct write to dbFilePath
+          fs.writeFileSync(this.dbFilePath, json, 'utf-8');
+          try { fs.unlinkSync(tempPath); } catch {}
+        }
+      }
     } catch (err) {
       console.error('[Dero Vault DB] Failed to persist database:', err);
     }
@@ -206,13 +218,20 @@ export class LocalDatabase {
   }
 
   // --- History & Sessions ---
-  public saveBackupSession(session: BackupSession): void {
+  public saveBackupSession(session: BackupSession, immediate = false): void {
+    if (!Array.isArray(this.data.backupHistory)) {
+      this.data.backupHistory = [];
+    }
+
+    // Defensive clone to avoid state corruption across async pipeline phases
+    const sessionSnapshot: BackupSession = { ...session };
+
     // Check if session already exists, if so update it
     const index = this.data.backupHistory.findIndex(s => s.id === session.id);
     if (index >= 0) {
-      this.data.backupHistory[index] = session;
+      this.data.backupHistory[index] = sessionSnapshot;
     } else {
-      this.data.backupHistory.unshift(session);
+      this.data.backupHistory.unshift(sessionSnapshot);
       // Keep last 500 sessions locally
       if (this.data.backupHistory.length > 500) {
         this.data.backupHistory = this.data.backupHistory.slice(0, 500);
@@ -227,7 +246,16 @@ export class LocalDatabase {
       }
     }
 
-    this.schedulePersist();
+    const isTerminal = ['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space'].includes(session.status);
+    if (immediate || isTerminal) {
+      if (this.writeTimer) {
+        clearTimeout(this.writeTimer);
+        this.writeTimer = null;
+      }
+      this.persistSync(this.data);
+    } else {
+      this.schedulePersist();
+    }
   }
 
   public getBackupHistory(limit: number = 50): BackupSession[] {

@@ -99,6 +99,8 @@ export interface BackupSession {
   // Detailed errors
   errors: FileCopyError[];
   reportPath?: string;
+  txtReportPath?: string;
+  reportSummary?: string;
 }
 
 export interface AppSettings {
