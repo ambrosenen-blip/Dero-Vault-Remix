@@ -63,12 +63,11 @@ export class FileComparison {
     const modifiedFiles: PlannedFileCopy[] = [];
     let totalBytesToCopy = 0;
 
-    for (const source of scannedFiles) {
-      const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
-      // Destination path: DERO_VAULT_BACKUP/CURRENT/<SourceNamespace>/<relativePath>
-      const destFilePath = path.join(currentBackupDir, sourceNamespace, source.relativePath);
-
-      if (!fs.existsSync(destFilePath)) {
+    // Fast-path: If initial backup, all scanned files are definitively NEW
+    if (isInitialBackup) {
+      for (const source of scannedFiles) {
+        const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
+        const destFilePath = path.join(currentBackupDir, sourceNamespace, source.relativePath);
         const item: PlannedFileCopy = {
           source,
           destinationPath: destFilePath,
@@ -78,7 +77,42 @@ export class FileComparison {
         toCopy.push(item);
         newFiles.push(item);
         totalBytesToCopy += source.size;
-      } else {
+      }
+      return {
+        isInitialBackup,
+        toCopy,
+        skipped,
+        newFiles,
+        modifiedFiles,
+        totalBytesToCopy,
+      };
+    }
+
+    // Incremental comparison with adaptive bounded parallel stat workers
+    const concurrency = scannedFiles.length < 50 ? 2 : Math.min(8, Math.max(4, Math.floor(scannedFiles.length / 10)));
+    let nextIndex = 0;
+    const lock = {
+      pushNew: (item: PlannedFileCopy) => {
+        toCopy.push(item);
+        newFiles.push(item);
+        totalBytesToCopy += item.size;
+      },
+      pushMod: (item: PlannedFileCopy) => {
+        toCopy.push(item);
+        modifiedFiles.push(item);
+        totalBytesToCopy += item.size;
+      },
+      pushSkip: (source: ScannedFile) => {
+        skipped.push(source);
+      },
+    };
+
+    const worker = async () => {
+      while (nextIndex < scannedFiles.length) {
+        const source = scannedFiles[nextIndex++];
+        const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
+        const destFilePath = path.join(currentBackupDir, sourceNamespace, source.relativePath);
+
         try {
           const destStat = await fs.promises.stat(destFilePath);
           const sizeMatches = destStat.size === source.size;
@@ -87,39 +121,38 @@ export class FileComparison {
           const timeMatches = timeDiff < 2000;
 
           if (sizeMatches && timeMatches) {
-            // Unchanged file -> Skip
-            skipped.push(source);
+            lock.pushSkip(source);
           } else {
-            // Modified file -> Needs copy
             const versionArchivePath = preserveVersions
               ? path.join(versionsBaseDir, revisionFolder, sourceNamespace, source.relativePath)
               : undefined;
 
-            const item: PlannedFileCopy = {
+            lock.pushMod({
               source,
               destinationPath: destFilePath,
               versionArchivePath,
               action: 'MODIFIED',
               size: source.size,
-            };
-            toCopy.push(item);
-            modifiedFiles.push(item);
-            totalBytesToCopy += source.size;
+            });
           }
         } catch {
-          // If error reading dest file stat, treat as new
-          const item: PlannedFileCopy = {
+          // File does not exist on destination -> Treat as NEW
+          lock.pushNew({
             source,
             destinationPath: destFilePath,
             action: 'NEW',
             size: source.size,
-          };
-          toCopy.push(item);
-          newFiles.push(item);
-          totalBytesToCopy += source.size;
+          });
         }
       }
+    };
+
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < concurrency; i++) {
+      workers.push(worker());
     }
+    await Promise.all(workers);
+
 
     return {
       isInitialBackup,

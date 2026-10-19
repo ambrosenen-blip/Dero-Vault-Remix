@@ -284,6 +284,18 @@ export class ApiClient {
         });
         ipcCleanups.push(cleanup);
       }
+      if (typeof api.onDriveConnected === 'function') {
+        const cleanup = api.onDriveConnected((drive: RemovableDrive) => {
+          callbacks.onConnected?.(drive);
+        });
+        ipcCleanups.push(cleanup);
+      }
+      if (typeof api.onDriveDisconnected === 'function') {
+        const cleanup = api.onDriveDisconnected((drive: RemovableDrive) => {
+          callbacks.onDisconnected?.(drive);
+        });
+        ipcCleanups.push(cleanup);
+      }
     }
 
     return () => {

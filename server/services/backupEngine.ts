@@ -9,6 +9,7 @@
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { BackupProfile, BackupSession, FileCopyError, RemovableDrive } from '../types.js';
 import { LocalDatabase } from './localDb.js';
 import { FileScanner, ScannedFile } from './fileScanner.js';
@@ -137,11 +138,15 @@ export class BackupEngine extends EventEmitter {
 
     let scannedFiles: ScannedFile[] = [];
     try {
+      let lastScanEmit = 0;
       scannedFiles = await FileScanner.scanFolders(profile.sourceFolders, (count, current) => {
         session.filesScanned = count;
         session.currentFile = current;
-        this.db.saveBackupSession(session);
-        this.emit('session:update', session);
+        const now = Date.now();
+        if (now - lastScanEmit >= 150) {
+          lastScanEmit = now;
+          this.emit('session:update', session);
+        }
       });
     } catch (scanErr: any) {
       session.status = 'failed';
@@ -226,116 +231,69 @@ export class BackupEngine extends EventEmitter {
       return;
     }
 
-    // Step 4: Atomic chunked copy
+    // Step 3.5: Fast-path for incremental backup with zero changes
+    if (comparison.toCopy.length === 0) {
+      session.endTime = new Date().toISOString();
+      session.status = 'completed';
+      session.currentFile = undefined;
+      session.currentSpeedBps = 0;
+      session.estimatedSecondsRemaining = 0;
+      session.isVerified = true;
+      session.verificationNotes = `Up to date: ${comparison.skipped.length} file(s) scanned and confirmed unchanged.`;
+
+      await this.generateBackupReport(destMountPath, session);
+      this.db.saveBackupSession(session, true);
+      this.db.log('success', 'BackupEngine', `Backup completed for "${session.driveName}". 0 new/modified files, ${comparison.skipped.length} unchanged files skipped.`);
+      this.emit('session:update', session);
+      this.emit('session:complete', session);
+      return;
+    }
+
+    // Step 4: Turbo atomic chunked copy with bounded parallel concurrency
     session.status = 'copying';
     this.emit('session:update', session);
 
     const successfullyCopied: PlannedFileCopy[] = [];
+    const precomputedHashes = new Map<string, string>();
     const copyStartTime = Date.now();
     let totalBytesCopiedSoFar = 0;
     let lastSpeedCheckTime = copyStartTime;
     let bytesSinceLastCheck = 0;
+    let lastEmitTime = copyStartTime;
 
-    for (let i = 0; i < comparison.toCopy.length; i++) {
-      if (this.isCancelled) return;
-
-      while (this.isPaused) {
-        await new Promise((r) => setTimeout(r, 200));
+    // Cache of verified directories to eliminate redundant mkdir syscalls
+    const ensuredDirs = new Set<string>();
+    const ensureDirCached = async (targetDir: string) => {
+      if (ensuredDirs.has(targetDir)) return;
+      if (!fs.existsSync(targetDir)) {
+        await fs.promises.mkdir(targetDir, { recursive: true });
       }
+      ensuredDirs.add(targetDir);
+    };
 
-      const item = comparison.toCopy[i];
-      session.currentFile = item.source.fullPath;
+    // Adaptive bounded concurrency: up to 16 parallel workers for small/mixed files, 4 for large files (> 30MB)
+    const hasLargeFiles = comparison.toCopy.some((item) => item.size > 30 * 1024 * 1024);
+    const concurrency = hasLargeFiles ? 4 : Math.min(16, Math.max(4, comparison.toCopy.length));
 
-      // Check if drive is still physically connected and accessible
-      if (!fs.existsSync(destMountPath)) {
-        session.status = 'interrupted';
-        session.endTime = new Date().toISOString();
-        session.errors.push({
-          path: item.source.fullPath,
-          destPath: item.destinationPath,
-          error: 'The backup drive was disconnected during copy.',
-          timestamp: new Date().toISOString(),
-        });
-        this.db.saveBackupSession(session);
-        this.db.log('error', 'BackupEngine', `BACKUP INTERRUPTED: Drive ${drive.driveLetter} was disconnected.`);
-        this.emit('session:update', session);
-        return;
-      }
+    let nextItemIndex = 0;
+    let copyInterrupted = false;
 
-      // Atomic Staging Path
-      const stagingPath = `${item.destinationPath}.dero_part`;
+    const copyWorker = async () => {
+      while (nextItemIndex < comparison.toCopy.length) {
+        if (this.isCancelled || copyInterrupted) return;
 
-      try {
-        // If modified and version history enabled, archive existing file into VERSIONS
-        if (item.action === 'MODIFIED' && item.versionArchivePath && fs.existsSync(item.destinationPath)) {
-          const archiveDir = path.dirname(item.versionArchivePath);
-          if (!fs.existsSync(archiveDir)) {
-            await fs.promises.mkdir(archiveDir, { recursive: true });
-          }
-          await fs.promises.copyFile(item.destinationPath, item.versionArchivePath);
+        while (this.isPaused) {
+          await new Promise((r) => setTimeout(r, 200));
         }
 
-        // Ensure target directory exists in CURRENT
-        const targetDir = path.dirname(item.destinationPath);
-        if (!fs.existsSync(targetDir)) {
-          await fs.promises.mkdir(targetDir, { recursive: true });
-        }
+        const item = comparison.toCopy[nextItemIndex++];
+        if (!item) break;
 
-        // Clean any leftover staging file before beginning
-        if (fs.existsSync(stagingPath)) {
-          try {
-            await fs.promises.unlink(stagingPath);
-          } catch {}
-        }
+        session.currentFile = item.source.fullPath;
 
-        // 1. Stream copy to staging path
-        await this.copyFileStreamed(item.source.fullPath, stagingPath, (chunkBytes) => {
-          totalBytesCopiedSoFar += chunkBytes;
-          bytesSinceLastCheck += chunkBytes;
-          session.bytesTransferred = totalBytesCopiedSoFar;
-
-          const now = Date.now();
-          const elapsed = (now - lastSpeedCheckTime) / 1000;
-          if (elapsed >= 0.5) {
-            session.currentSpeedBps = bytesSinceLastCheck / elapsed;
-            lastSpeedCheckTime = now;
-            bytesSinceLastCheck = 0;
-
-            const remainingBytes = Math.max(0, session.bytesTotal - session.bytesTransferred);
-            if (session.currentSpeedBps > 0) {
-              session.estimatedSecondsRemaining = Math.ceil(remainingBytes / session.currentSpeedBps);
-            }
-            this.emit('session:update', session);
-          }
-        });
-
-        // 2. Validate staged file size against source
-        const stagedStat = await fs.promises.stat(stagingPath);
-        if (stagedStat.size !== item.size) {
-          throw new Error(`Incomplete write: expected ${item.size} bytes, wrote ${stagedStat.size} bytes`);
-        }
-
-        // 3. Sync file modification time
-        try {
-          const sourceStat = await fs.promises.stat(item.source.fullPath);
-          await fs.promises.utimes(stagingPath, sourceStat.atime, sourceStat.mtime);
-        } catch {}
-
-        // 4. Atomically promote staged file to destination path
-        await fs.promises.rename(stagingPath, item.destinationPath);
-
-        successfullyCopied.push(item);
-        session.filesCopied++;
-      } catch (copyErr: any) {
-        // If copy failed or drive disconnected, clean up incomplete staging file
-        try {
-          if (fs.existsSync(stagingPath)) {
-            await fs.promises.unlink(stagingPath);
-          }
-        } catch {}
-
-        // Check if error was caused by drive disconnection
+        // Check if drive is still physically connected and accessible
         if (!fs.existsSync(destMountPath)) {
+          copyInterrupted = true;
           session.status = 'interrupted';
           session.endTime = new Date().toISOString();
           session.errors.push({
@@ -350,19 +308,122 @@ export class BackupEngine extends EventEmitter {
           return;
         }
 
-        session.filesFailed++;
-        session.errors.push({
-          path: item.source.fullPath,
-          destPath: item.destinationPath,
-          error: copyErr.message || 'Write error',
-          timestamp: new Date().toISOString(),
-        });
+        // Atomic Staging Path
+        const stagingPath = `${item.destinationPath}.dero_part`;
+
+        try {
+          // If modified and version history enabled, archive existing file into VERSIONS
+          if (item.action === 'MODIFIED' && item.versionArchivePath && fs.existsSync(item.destinationPath)) {
+            const archiveDir = path.dirname(item.versionArchivePath);
+            await ensureDirCached(archiveDir);
+            await fs.promises.copyFile(item.destinationPath, item.versionArchivePath);
+          }
+
+          // Ensure target directory exists in CURRENT
+          const targetDir = path.dirname(item.destinationPath);
+          await ensureDirCached(targetDir);
+
+          // 1. High-throughput stream copy to staging path with on-the-fly SHA-256 calculation
+          const { sha256Hex } = await this.copyFileStreamedTurbo(
+            item.source.fullPath,
+            stagingPath,
+            (chunkBytes) => {
+              totalBytesCopiedSoFar += chunkBytes;
+              bytesSinceLastCheck += chunkBytes;
+              session.bytesTransferred = totalBytesCopiedSoFar;
+
+              const now = Date.now();
+              const speedElapsed = (now - lastSpeedCheckTime) / 1000;
+              if (speedElapsed >= 0.4) {
+                session.currentSpeedBps = bytesSinceLastCheck / speedElapsed;
+                lastSpeedCheckTime = now;
+                bytesSinceLastCheck = 0;
+
+                const remainingBytes = Math.max(0, session.bytesTotal - session.bytesTransferred);
+                if (session.currentSpeedBps > 0) {
+                  session.estimatedSecondsRemaining = Math.ceil(remainingBytes / session.currentSpeedBps);
+                }
+              }
+
+              // Throttle UI event emissions to max once every 120ms to prevent event loop starvation
+              if (now - lastEmitTime >= 120) {
+                lastEmitTime = now;
+                this.emit('session:update', session);
+              }
+            },
+            profile.verifyBackups
+          );
+
+          if (sha256Hex) {
+            precomputedHashes.set(item.source.fullPath, sha256Hex);
+          }
+
+          // 2. Validate staged file size against source
+          const stagedStat = await fs.promises.stat(stagingPath);
+          if (stagedStat.size !== item.size) {
+            throw new Error(`Incomplete write: expected ${item.size} bytes, wrote ${stagedStat.size} bytes`);
+          }
+
+          // 3. Sync file modification time using scanned mtimeMs without redundant source stat
+          try {
+            const mtime = new Date(item.source.mtimeMs || Date.now());
+            await fs.promises.utimes(stagingPath, mtime, mtime);
+          } catch {}
+
+          // 4. Atomically promote staged file to destination path
+          await fs.promises.rename(stagingPath, item.destinationPath);
+
+          successfullyCopied.push(item);
+          session.filesCopied++;
+        } catch (copyErr: any) {
+          // If copy failed or drive disconnected, clean up incomplete staging file
+          try {
+            if (fs.existsSync(stagingPath)) {
+              await fs.promises.unlink(stagingPath);
+            }
+          } catch {}
+
+          // Check if error was caused by drive disconnection
+          if (!fs.existsSync(destMountPath)) {
+            copyInterrupted = true;
+            session.status = 'interrupted';
+            session.endTime = new Date().toISOString();
+            session.errors.push({
+              path: item.source.fullPath,
+              destPath: item.destinationPath,
+              error: 'The backup drive was disconnected during copy.',
+              timestamp: new Date().toISOString(),
+            });
+            this.db.saveBackupSession(session);
+            this.db.log('error', 'BackupEngine', `BACKUP INTERRUPTED: Drive ${drive.driveLetter} was disconnected.`);
+            this.emit('session:update', session);
+            return;
+          }
+
+          session.filesFailed++;
+          session.errors.push({
+            path: item.source.fullPath,
+            destPath: item.destinationPath,
+            error: copyErr.message || 'Write error',
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        const now = Date.now();
+        if (now - lastEmitTime >= 120) {
+          lastEmitTime = now;
+          this.emit('session:update', session);
+        }
       }
+    };
 
-      this.emit('session:update', session);
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < concurrency; i++) {
+      workers.push(copyWorker());
     }
+    await Promise.all(workers);
 
-    if (this.isCancelled) return;
+    if (this.isCancelled || copyInterrupted) return;
 
     // Step 5: Verification Phase
     if (profile.verifyBackups && successfullyCopied.length > 0) {
@@ -371,10 +432,15 @@ export class BackupEngine extends EventEmitter {
       this.emit('session:update', session);
 
       try {
-        const verifyResult = await BackupVerification.verifyBatch(successfullyCopied, true, (done, total) => {
-          session.currentFile = `Verifying file ${done} of ${total}...`;
-          this.emit('session:update', session);
-        });
+        const verifyResult = await BackupVerification.verifyBatch(
+          successfullyCopied,
+          true,
+          (done, total) => {
+            session.currentFile = `Verifying file ${done} of ${total}...`;
+            this.emit('session:update', session);
+          },
+          precomputedHashes
+        );
 
         session.isVerified = verifyResult.isVerified;
         if (!verifyResult.isVerified) {
@@ -418,16 +484,31 @@ export class BackupEngine extends EventEmitter {
     this.emit('session:complete', session);
   }
 
-  private async copyFileStreamed(
+  private async copyFileStreamedTurbo(
     sourcePath: string,
     destPath: string,
-    onChunk: (bytes: number) => void
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const readStream = fs.createReadStream(sourcePath);
-      const writeStream = fs.createWriteStream(destPath);
+    onChunk: (bytes: number) => void,
+    calculateHash: boolean = true
+  ): Promise<{ sha256Hex: string }> {
+    try {
+      const stat = await fs.promises.stat(sourcePath);
+      // For office-sized files (<= 4 MB), direct bounded buffer read/write eliminates multi-tick stream pipeline latency
+      if (stat.size <= 4 * 1024 * 1024) {
+        const buf = await fs.promises.readFile(sourcePath);
+        const sha256Hex = calculateHash ? crypto.createHash('sha256').update(buf).digest('hex') : '';
+        await fs.promises.writeFile(destPath, buf);
+        onChunk(buf.length);
+        return { sha256Hex };
+      }
+    } catch {}
 
-      readStream.on('data', (chunk) => {
+    return new Promise((resolve, reject) => {
+      const hash = calculateHash ? crypto.createHash('sha256') : null;
+      const readStream = fs.createReadStream(sourcePath, { highWaterMark: 512 * 1024 });
+      const writeStream = fs.createWriteStream(destPath, { highWaterMark: 512 * 1024 });
+
+      readStream.on('data', (chunk: Buffer | string) => {
+        if (hash) hash.update(chunk);
         onChunk(chunk.length);
       });
 
@@ -442,11 +523,19 @@ export class BackupEngine extends EventEmitter {
       });
 
       writeStream.on('finish', () => {
-        resolve();
+        resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
       });
 
       readStream.pipe(writeStream);
     });
+  }
+
+  private async copyFileStreamed(
+    sourcePath: string,
+    destPath: string,
+    onChunk: (bytes: number) => void
+  ): Promise<void> {
+    await this.copyFileStreamedTurbo(sourcePath, destPath, onChunk, false);
   }
 
   /**

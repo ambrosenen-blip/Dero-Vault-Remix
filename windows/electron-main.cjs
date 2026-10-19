@@ -61,7 +61,35 @@ ipcMain.handle('dialog:browseFolder', async () => {
   return result.filePaths[0];
 });
 
+ipcMain.handle('window:minimize', () => {
+  if (mainWindow) {
+    mainWindow.minimize();
+  }
+});
+
+ipcMain.handle('window:toggleMaximize', () => {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    return mainWindow.isMaximized();
+  }
+  return false;
+});
+
+ipcMain.handle('window:isMaximized', () => {
+  return mainWindow ? mainWindow.isMaximized() : false;
+});
+
 ipcMain.handle('window:minimizeToTray', () => {
+  if (mainWindow) {
+    mainWindow.hide();
+  }
+});
+
+ipcMain.handle('window:close', () => {
   if (mainWindow) {
     mainWindow.hide();
   }
@@ -438,6 +466,13 @@ function showTrayNotification(opts) {
   lastBalloonContent = content;
   lastBalloonTime = now;
 
+  // If the main window is already open, focused and active in the foreground, suppress redundant OS toasts
+  const isForegroundActive = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized();
+  if (isForegroundActive) {
+    console.log(`[Notification] [${new Date().toISOString()}] Main window is focused in foreground; suppressing redundant OS toast: "${content}"`);
+    return;
+  }
+
   const clickHandler = () => {
     console.log(`[Notification] [${new Date().toISOString()}] Notification clicked by user: "${content}"`);
     if (typeof onClick === 'function') {
@@ -594,6 +629,10 @@ function handleBackendStateChange(eventType, data) {
       });
       syncTrayState(`drive:connected (unregistered: ${drive.driveLetter})`);
     }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('drive:connected', drive);
+    }
   } else if (eventType === 'drive:unregistered_detected' && data) {
     const drive = data;
     if (drive.partial || drive.reason === 'detection-timeout') {
@@ -611,6 +650,10 @@ function handleBackendStateChange(eventType, data) {
       onClick: () => openRegistrationForDrive(drive),
     });
     syncTrayState(`drive:unregistered_detected (${drive.driveLetter})`);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('drive:unregistered_detected', drive);
+    }
   } else if (eventType === 'drive:registered' && data) {
     const stableId = data.stableHardwareId;
     console.log(`[Main] [${new Date().toISOString()}] Drive ${stableId || 'unknown'} registered.`);
@@ -626,6 +669,10 @@ function handleBackendStateChange(eventType, data) {
       lastUnregisteredDrive = null;
     }
     syncTrayState(`drive:registered (${stableId || data.driveLetter})`);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('drive:registered', data);
+    }
   } else if (eventType === 'drive:ignored' && data) {
     const letter = data.driveLetter || 'drive';
     console.log(`[Tray] [${new Date().toISOString()}] Ignored device (${letter}): Setting IGNORED state.`);
@@ -642,6 +689,10 @@ function handleBackendStateChange(eventType, data) {
     const drive = data;
     console.log(`[Tray] [${new Date().toISOString()}] Storage device disconnected event for ${drive.driveLetter} (${drive.stableHardwareId})`);
     removeDeviceFromState(drive.stableHardwareId || drive.driveLetter, 'sse:drive:disconnected');
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('drive:disconnected', drive);
+    }
   } else if ((eventType === 'backup:start' || eventType === 'backup:catchup') && data) {
     const isTerminal = ['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space'].includes(data.status);
     if (isTerminal) {
@@ -828,6 +879,7 @@ function createWindow() {
     title: 'Dero Vault — Your Digital Granary',
     icon: icon.isEmpty() ? undefined : icon,
     frame: true,
+    autoHideMenuBar: true,
     backgroundColor: '#020617', // Slate-950
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -836,6 +888,8 @@ function createWindow() {
       webSecurity: false,
     },
   });
+
+  mainWindow.setMenuBarVisibility(false);
 
   const appUrl = `http://127.0.0.1:${SERVER_PORT}`;
 
@@ -1474,6 +1528,7 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
     await ensureServerRunning();
     createWindow();
     createTray();

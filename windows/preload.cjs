@@ -12,7 +12,11 @@ try {
     isElectron: true,
     ping: () => 'pong',
     browseFolder: () => ipcRenderer.invoke('dialog:browseFolder'),
+    minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+    toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
     minimizeToTray: () => ipcRenderer.invoke('window:minimizeToTray'),
+    closeWindow: () => ipcRenderer.invoke('window:close'),
     expandWindow: () => ipcRenderer.invoke('window:expand'),
     showNotification: (opts) => ipcRenderer.invoke('tray:notify', opts),
     closeApp: () => ipcRenderer.invoke('app:quit'),
@@ -41,6 +45,16 @@ try {
       const handler = (_event, session) => callback(session);
       ipcRenderer.on('backup:complete', handler);
       return () => ipcRenderer.removeListener('backup:complete', handler);
+    },
+    onDriveConnected: (callback) => {
+      const handler = (_event, drive) => callback(drive);
+      ipcRenderer.on('drive:connected', handler);
+      return () => ipcRenderer.removeListener('drive:connected', handler);
+    },
+    onDriveDisconnected: (callback) => {
+      const handler = (_event, drive) => callback(drive);
+      ipcRenderer.on('drive:disconnected', handler);
+      return () => ipcRenderer.removeListener('drive:disconnected', handler);
     },
   });
 
