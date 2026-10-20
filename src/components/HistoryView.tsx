@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { History, CheckCircle2, AlertTriangle, XCircle, FileText, Trash2, ArrowUpRight } from 'lucide-react';
+import { History, CheckCircle2, AlertTriangle, XCircle, FileText, Trash2, ArrowUpRight, Zap, Shield } from 'lucide-react';
 import { BackupSession } from '../types';
 
 interface HistoryViewProps {
@@ -101,6 +101,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                 <tr className="border-b border-[#1E3466] bg-[#081126] text-slate-300 font-semibold uppercase tracking-wider text-[11px] font-['Poppins',sans-serif]">
                   <th className="py-3 px-4">Date &amp; Time</th>
                   <th className="py-3 px-4">Drive</th>
+                  <th className="py-3 px-4">Mode</th>
                   <th className="py-3 px-4">Result</th>
                   <th className="py-3 px-4 text-right">Files</th>
                   <th className="py-3 px-4 text-right">Transferred</th>
@@ -131,6 +132,28 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       <td className="py-3.5 px-4">
                         <div className="font-semibold text-white font-['Poppins',sans-serif]">{item.driveName}</div>
                         <div className="text-[11px] text-slate-400 font-mono">[{item.driveLetter}]</div>
+                      </td>
+
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                            item.mode === 'standard'
+                              ? 'bg-[#162852] text-slate-300 border-[#1E3466]'
+                              : 'bg-[#F4A62A]/15 text-[#F4A62A] border-[#F4A62A]/30'
+                          }`}
+                        >
+                          {item.mode === 'standard' ? (
+                            <>
+                              <Shield className="w-3 h-3 text-slate-400" />
+                              <span>Standard</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-3 h-3 text-[#F4A62A]" />
+                              <span>Turbo</span>
+                            </>
+                          )}
+                        </span>
                       </td>
 
                       <td className="py-3.5 px-4 whitespace-nowrap">

@@ -110,7 +110,8 @@ export async function runWorkload(
   name: string,
   sourceFolder: string,
   destRoot: string,
-  verifyBackups = true
+  verifyBackups = true,
+  isTurbo = false
 ): Promise<{
   workload: string;
   filesScanned: number;
@@ -164,7 +165,7 @@ export async function runWorkload(
   }, 10);
 
   const startTime = performance.now();
-  const session = await engine.startBackup(fakeDrive, profile);
+  const session = await engine.startBackup(fakeDrive, profile, { turboBackup: isTurbo });
 
   await new Promise<void>((resolve, reject) => {
     engine.on('session:complete', (s) => {

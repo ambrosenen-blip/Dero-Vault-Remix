@@ -21,8 +21,10 @@ import {
   FolderSync,
   XCircle,
   ExternalLink,
+  Zap,
+  Shield,
 } from 'lucide-react';
-import { BackupProfile, BackupSession, RemovableDrive } from '../types';
+import { AppSettings, BackupProfile, BackupSession, RemovableDrive } from '../types';
 import { DeroGranaryEmblem, DeroWordmark } from './BrandLogo';
 
 interface DashboardProps {
@@ -31,6 +33,8 @@ interface DashboardProps {
   registeredDrives: RemovableDrive[];
   backupProfiles?: BackupProfile[];
   history?: BackupSession[];
+  settings?: AppSettings;
+  onUpdateSettings?: (updates: Partial<AppSettings>) => void;
   onStartManualBackup: (stableHardwareId?: string) => void;
   onCancelBackup: () => void;
   onViewReport: (session: BackupSession) => void;
@@ -45,6 +49,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   registeredDrives,
   backupProfiles = [],
   history = [],
+  settings,
+  onUpdateSettings,
   onStartManualBackup,
   onCancelBackup,
   onViewReport,
@@ -139,8 +145,53 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Live System State Badge */}
+        {/* Live System State & Turbo Badges */}
         <div className="flex items-center gap-2">
+          {/* Turbo Mode Indicator Badge */}
+          {isBackingUp && currentSession ? (
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${
+                currentSession.mode === 'turbo'
+                  ? 'bg-[#F4A62A]/15 text-[#F4A62A] border-[#F4A62A]/40'
+                  : 'bg-[#162852] text-slate-300 border-[#1E3466]'
+              }`}
+            >
+              {currentSession.mode === 'turbo' ? (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-[#F4A62A] fill-current animate-pulse" />
+                  <span className="font-bold uppercase tracking-wider text-[10px]">TURBO BACKUP ACTIVE</span>
+                </>
+              ) : (
+                <>
+                  <Shield className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="font-semibold text-[10px]">Standard Backup Mode</span>
+                </>
+              )}
+            </div>
+          ) : settings ? (
+            <button
+              onClick={() => onUpdateSettings && onUpdateSettings({ turboBackup: !settings.turboBackup })}
+              title="Click to toggle between Turbo Backup and Standard Backup"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                settings.turboBackup
+                  ? 'bg-[#F4A62A]/15 hover:bg-[#F4A62A]/25 text-[#F4A62A] border-[#F4A62A]/40'
+                  : 'bg-[#162852] hover:bg-[#1E3466] text-slate-300 border-[#1E3466]'
+              }`}
+            >
+              {settings.turboBackup ? (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-[#F4A62A]" />
+                  <span className="font-bold text-[10px]">Turbo Mode: ON</span>
+                </>
+              ) : (
+                <>
+                  <Shield className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="font-medium text-[10px] text-slate-400">Turbo Mode: OFF</span>
+                </>
+              )}
+            </button>
+          ) : null}
+
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#081126] border border-[#1E3466] text-xs">
             <span
               className={`w-2 h-2 rounded-full ${
@@ -153,7 +204,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             />
             <span className="font-medium text-slate-200 text-[11px]">
               {isBackingUp
-                ? `Backing up ${currentSession?.driveName || ''} (${progressPercent.toFixed(0)}%)`
+                ? `${currentSession?.mode === 'turbo' ? 'Turbo' : 'Standard'} backup · ${currentSession?.driveName || ''} (${progressPercent.toFixed(0)}%)`
                 : connectedRegistered.length > 0
                 ? `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Protected`
                 : connectedUnregistered.length > 0
@@ -195,10 +246,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#F4A62A] animate-pulse" />
                   <span className="text-xs font-bold uppercase tracking-wider text-[#F4A62A] font-['Poppins',sans-serif]">
-                    Backup In Progress
+                    {currentSession.mode === 'turbo' ? 'Backing up in Turbo Mode' : 'Backing up in Standard Mode'}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                      currentSession.mode === 'turbo'
+                        ? 'bg-[#F4A62A]/20 text-[#F4A62A] border-[#F4A62A]/50'
+                        : 'bg-slate-800 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    {currentSession.mode === 'turbo' ? 'TURBO BACKUP ACTIVE' : 'Standard Backup Mode'}
                   </span>
                   <span className="text-xs text-slate-400">·</span>
-                  <span className="text-xs font-semibold text-white truncate max-w-[200px]">
+                  <span className="text-xs font-semibold text-white truncate max-w-[160px]">
                     {currentSession.driveName} ({currentSession.driveLetter})
                   </span>
                 </div>
@@ -219,12 +279,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </span>
                     <span className="text-xs text-slate-300 font-medium">
                       {currentSession.status === 'scanning'
-                        ? 'Scanning folders...'
+                        ? `Scanning source folders (${currentSession.mode === 'turbo' ? 'Turbo' : 'Standard'} Mode)...`
                         : currentSession.status === 'comparing'
-                        ? 'Comparing with granary...'
+                        ? `Comparing with granary (${currentSession.mode === 'turbo' ? 'Turbo' : 'Standard'} Mode)...`
                         : currentSession.status === 'verifying'
-                        ? 'Verifying written integrity...'
-                        : 'Copying files...'}
+                        ? `Verifying written integrity (${currentSession.mode === 'turbo' ? 'Turbo' : 'Standard'} Mode)...`
+                        : `Copying files (${currentSession.mode === 'turbo' ? 'Turbo Mode · Bounded Parallel' : 'Standard Mode · Conservative Sequential'})...`}
                     </span>
                   </div>
                   <div className="text-right text-[11px] text-slate-300 font-mono tabular-nums">
@@ -518,6 +578,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <span className="text-slate-400">Destination:</span>
                   <span className="font-medium text-white truncate max-w-[170px]">
                     {latestSession.driveName} ({latestSession.driveLetter})
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Pipeline Mode:</span>
+                  <span className={`font-semibold ${latestSession.mode === 'turbo' ? 'text-[#F4A62A]' : 'text-slate-300'}`}>
+                    {latestSession.mode === 'turbo' ? 'Turbo Mode (Bounded Parallel)' : 'Standard Mode (Sequential)'}
                   </span>
                 </div>
                 <div className="flex justify-between">

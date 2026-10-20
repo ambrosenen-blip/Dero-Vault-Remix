@@ -21,6 +21,7 @@ interface DatabaseSchema {
 const DEFAULT_SETTINGS: AppSettings = {
   autoBackup: true,
   startOnConnect: true,
+  turboBackup: true,
   notifyOnStart: true,
   notifyOnComplete: true,
   verifyBackups: true,

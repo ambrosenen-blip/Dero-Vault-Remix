@@ -92,6 +92,9 @@ export interface BackupSession {
   currentSpeedBps: number;
   estimatedSecondsRemaining: number;
   
+  // Mode
+  mode?: 'turbo' | 'standard';
+
   // Verification
   isVerified: boolean;
   verificationNotes?: string;
@@ -106,6 +109,7 @@ export interface BackupSession {
 export interface AppSettings {
   autoBackup: boolean; // Master auto-backup switch
   startOnConnect: boolean; // Start backup automatically when registered drive is connected
+  turboBackup: boolean; // Turbo backup engine with bounded parallel copying
   notifyOnStart: boolean; // Show notification when backup begins
   notifyOnComplete: boolean; // Show notification when backup completes
   verifyBackups: boolean; // Verify file integrity after copy

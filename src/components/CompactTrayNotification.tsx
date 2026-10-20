@@ -17,7 +17,8 @@ import {
   Loader2,
   Check,
   Pause,
-  Play
+  Play,
+  Zap,
 } from 'lucide-react';
 import { RemovableDrive, BackupSession, SourceFolderOption } from '../types';
 import { DeroGranaryEmblem } from './BrandLogo';
@@ -355,15 +356,29 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
           ? Math.round((session.filesCopied / totalPlanned) * 100)
           : 0;
 
+        const formatSpeed = (bps: number) => {
+          if (!bps || bps <= 0) return '';
+          return bps < 1024 * 1024
+            ? `${(bps / 1024).toFixed(1)} KB/s`
+            : `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+        };
+
+        const formatEta = (secs: number) => {
+          if (!secs || secs <= 0) return '';
+          return secs < 60 ? `${secs}s left` : `${Math.floor(secs / 60)}m ${secs % 60}s left`;
+        };
+
+        const isTurbo = session.mode === 'turbo';
+
         const actionText =
           session.status === 'scanning'
-            ? 'Scanning source folders…'
+            ? `Scanning source folders (${isTurbo ? 'Turbo' : 'Standard'} Mode)…`
             : session.status === 'comparing'
-            ? 'Comparing against granary…'
+            ? `Comparing against granary (${isTurbo ? 'Turbo' : 'Standard'} Mode)…`
             : session.status === 'copying'
-            ? 'Backing up your office…'
+            ? `${isTurbo ? 'Backing up in Turbo Mode' : 'Backing up in Standard Mode'}…`
             : session.status === 'verifying'
-            ? 'Verifying file integrity…'
+            ? `Verifying file integrity (${isTurbo ? 'Turbo' : 'Standard'} Mode)…`
             : 'Backing up your office…';
 
         const displayBadge =
@@ -389,7 +404,28 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                       {displayBadge}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-300 truncate max-w-[200px]">
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span
+                      className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
+                        isTurbo
+                          ? 'bg-[#F4A62A]/20 text-[#F4A62A] border-[#F4A62A]/40'
+                          : 'bg-slate-800 text-slate-300 border-slate-700'
+                      }`}
+                    >
+                      {isTurbo ? (
+                        <>
+                          <Zap className="w-2.5 h-2.5 fill-current" />
+                          <span>TURBO BACKUP ACTIVE</span>
+                        </>
+                      ) : (
+                        <>
+                          <Shield className="w-2.5 h-2.5" />
+                          <span>Standard Backup Mode</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 truncate max-w-[220px] mt-0.5">
                     {actionText}
                   </p>
                 </div>
@@ -434,8 +470,16 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
                     ? `${session.filesScanned.toLocaleString()} files scanned`
                     : `${session.filesCopied.toLocaleString()} / ${Math.max(session.filesCopied, totalPlanned).toLocaleString()} files`}
                 </span>
-                <span>
-                  {formatBytes(session.bytesTransferred)} / {formatBytes(session.bytesTotal)}
+                <span className="flex items-center gap-1.5">
+                  {formatSpeed(session.currentSpeedBps) && (
+                    <span className="text-[#F4A62A] font-semibold">{formatSpeed(session.currentSpeedBps)}</span>
+                  )}
+                  {formatEta(session.estimatedSecondsRemaining) && (
+                    <span className="text-slate-400">· {formatEta(session.estimatedSecondsRemaining)}</span>
+                  )}
+                  <span className="text-slate-300">
+                    {formatBytes(session.bytesTransferred)} / {formatBytes(session.bytesTotal)}
+                  </span>
                 </span>
               </div>
             </div>

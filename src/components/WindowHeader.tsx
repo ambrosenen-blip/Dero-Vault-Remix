@@ -1,10 +1,15 @@
 /**
- * Dero Vault — Windows 11 Title Bar & Header
- * Clean, calm desktop window frame with granary emblem and tray minimize.
+ * Dero Vault — Consolidated Windows Title Bar & Header
+ * Single, coherent in-app title bar conforming to Windows 11 desktop conventions.
+ * Features:
+ * - Left: Granary emblem, DERO VAULT and "Your digital granary."
+ * - Middle/Right: Live backup status and connected-drive status.
+ * - Far Right: Exactly one consolidated set of window controls (Minimize, Maximize/Restore, Close).
+ * - Full dragging support via -webkit-app-region with no-drag exclusion on buttons.
  */
 
-import React from 'react';
-import { Minus, Square, X, HardDrive, Bell, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Minus, Square, Copy, X, HardDrive, Download } from 'lucide-react';
 import { DeroGranaryEmblem } from './BrandLogo';
 
 interface WindowHeaderProps {
@@ -22,28 +27,80 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
   isBackingUp,
   onOpenDownloadModal,
 }) => {
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  // Sync window maximized state with Electron native window
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const api = (window as any).electronAPI;
+      if (api.isMaximized) {
+        api.isMaximized().then((max: boolean) => setIsMaximized(Boolean(max))).catch(() => {});
+      }
+      if (api.onWindowStateChange) {
+        const cleanup = api.onWindowStateChange((state: { isMaximized: boolean }) => {
+          setIsMaximized(Boolean(state.isMaximized));
+        });
+        return cleanup;
+      }
+    }
+  }, []);
+
+  const handleMinimize = () => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.minimizeWindow) {
+      (window as any).electronAPI.minimizeWindow();
+    } else {
+      onMinimizeToTray();
+    }
+  };
+
+  const handleToggleMaximize = async () => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.toggleMaximize) {
+      const state = await (window as any).electronAPI.toggleMaximize();
+      setIsMaximized(Boolean(state));
+    }
+  };
+
+  const handleClose = () => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.closeWindow) {
+      (window as any).electronAPI.closeWindow();
+    } else {
+      onMinimizeToTray();
+    }
+  };
+
   return (
-    <header className="flex items-center justify-between px-3.5 py-2 bg-[#0D1B3D] border-b border-[#1E3466] text-slate-300 select-none text-xs">
-      {/* Left: Window title and brand */}
-      <div className="flex items-center gap-2.5">
-        {/* Granary Emblem */}
-        <div className="relative flex items-center justify-center">
-          <DeroGranaryEmblem size={24} showGlow={true} />
+    <header
+      className="flex items-center justify-between px-3.5 py-1.5 bg-[#0A142F] border-b border-[#1E3466] text-slate-300 select-none text-xs w-full relative z-40"
+      style={{ WebkitAppRegion: 'drag' } as any}
+    >
+      {/* Left: Window title, granary emblem, and brand slogan */}
+      <div
+        className="flex items-center gap-2.5"
+        style={{ WebkitAppRegion: 'no-drag' } as any}
+      >
+        <div className="relative flex items-center justify-center shrink-0">
+          <DeroGranaryEmblem size={22} showGlow={true} />
         </div>
         <div className="flex items-center gap-2">
-          <span className="font-['Poppins',sans-serif] font-bold text-white tracking-tight text-sm">
+          <span className="font-['Poppins',sans-serif] font-bold text-white tracking-tight text-sm leading-none">
             DERO VAULT
           </span>
-          <span className="text-[#F4A62A]" aria-hidden="true">·</span>
-          <span className="text-slate-300 font-normal hidden sm:inline text-[11px]">
-            Your digital granary
+          <span className="text-[#F4A62A] text-xs" aria-hidden="true">·</span>
+          <span className="text-slate-300 font-normal hidden sm:inline text-[11px] leading-none">
+            Your digital granary.
           </span>
         </div>
       </div>
 
-      {/* Center: Live background status indicator */}
-      <div className="hidden md:flex items-center gap-3 text-slate-300 text-xs">
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#162852]/80 border border-[#1E3466]">
+      {/* Middle/Right: Live backup status and connected-drive status */}
+      <div
+        className="hidden md:flex items-center gap-3 text-slate-300 text-xs mx-auto"
+        style={{ WebkitAppRegion: 'drag' } as any}
+      >
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#132247]/80 border border-[#1E3466]"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
           <span
             className={`w-2 h-2 rounded-full ${
               isBackingUp
@@ -53,7 +110,7 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
                 : 'bg-slate-500'
             }`}
           />
-          <span className="text-[11px] font-medium">
+          <span className="text-[11px] font-medium text-slate-200">
             {isBackingUp
               ? 'Backup in progress...'
               : isAutoBackupActive
@@ -62,19 +119,22 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
           </span>
         </div>
         {activeDrivesCount > 0 && (
-          <>
-            <span className="text-slate-600" aria-hidden="true">·</span>
-            <div className="flex items-center gap-1 text-slate-200">
-              <HardDrive className="w-3 h-3 text-[#F4A62A]" />
-              <span>{activeDrivesCount} drive{activeDrivesCount > 1 ? 's' : ''} connected</span>
-            </div>
-          </>
+          <div
+            className="flex items-center gap-1 text-slate-300 text-[11px]"
+            style={{ WebkitAppRegion: 'no-drag' } as any}
+          >
+            <HardDrive className="w-3 h-3 text-[#F4A62A]" />
+            <span>{activeDrivesCount} drive{activeDrivesCount > 1 ? 's' : ''} connected</span>
+          </div>
         )}
       </div>
 
-      {/* Right: Consolidated Windows Controls */}
-      <div className="flex items-center gap-1 -mr-1">
-        {/* Suppress download button in desktop app environment */}
+      {/* Far Right: Exactly one consolidated set of window controls */}
+      <div
+        className="flex items-center gap-0.5 -mr-1"
+        style={{ WebkitAppRegion: 'no-drag' } as any}
+      >
+        {/* Web download link (suppressed inside Electron app) */}
         {onOpenDownloadModal && typeof window !== 'undefined' && !(window as any).electronAPI?.isElectron && (
           <button
             onClick={onOpenDownloadModal}
@@ -82,47 +142,40 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
             className="flex items-center gap-1.5 px-2.5 py-1 mr-2 rounded bg-[#F4A62A]/15 hover:bg-[#F4A62A]/25 text-[11px] text-[#F4A62A] font-semibold transition-colors border border-[#F4A62A]/40"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Download .exe</span>
+            <span className="hidden lg:inline">Download .exe</span>
           </button>
         )}
 
-        {/* Standard Windows Control Buttons */}
+        {/* Windows 11 Minimize Control */}
         <button
-          onClick={() => {
-            if (typeof window !== 'undefined' && (window as any).electronAPI?.minimizeWindow) {
-              (window as any).electronAPI.minimizeWindow();
-            } else {
-              onMinimizeToTray();
-            }
-          }}
+          onClick={handleMinimize}
           title="Minimize"
-          className="p-1.5 hover:bg-[#162852] rounded text-slate-400 hover:text-white transition-colors"
+          aria-label="Minimize Window"
+          className="w-10 h-8 flex items-center justify-center hover:bg-[#162852] rounded text-slate-400 hover:text-white transition-colors"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
 
+        {/* Windows 11 Maximize / Restore Control */}
         <button
-          onClick={() => {
-            if (typeof window !== 'undefined' && (window as any).electronAPI?.toggleMaximize) {
-              (window as any).electronAPI.toggleMaximize();
-            }
-          }}
-          title="Maximize / Restore"
-          className="p-1.5 hover:bg-[#162852] rounded text-slate-400 hover:text-white transition-colors"
+          onClick={handleToggleMaximize}
+          title={isMaximized ? 'Restore Down' : 'Maximize'}
+          aria-label={isMaximized ? 'Restore Window' : 'Maximize Window'}
+          className="w-10 h-8 flex items-center justify-center hover:bg-[#162852] rounded text-slate-400 hover:text-white transition-colors"
         >
-          <Square className="w-3.5 h-3.5" />
+          {isMaximized ? (
+            <Copy className="w-3 h-3 rotate-180" />
+          ) : (
+            <Square className="w-3 h-3" />
+          )}
         </button>
 
+        {/* Windows 11 Close Control (Hides safely to System Tray) */}
         <button
-          onClick={() => {
-            if (typeof window !== 'undefined' && (window as any).electronAPI?.closeWindow) {
-              (window as any).electronAPI.closeWindow();
-            } else {
-              onMinimizeToTray();
-            }
-          }}
-          title="Close to Tray"
-          className="p-1.5 hover:bg-rose-950/60 hover:text-rose-300 rounded text-slate-400 transition-colors"
+          onClick={handleClose}
+          title="Close (Hide to Tray)"
+          aria-label="Close to Tray"
+          className="w-10 h-8 flex items-center justify-center hover:bg-[#E81123] hover:text-white rounded text-slate-400 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>

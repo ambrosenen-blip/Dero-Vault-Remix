@@ -440,7 +440,9 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     }
 
     try {
-      const session = await backupEngine.startBackup(drive, profile);
+      const session = await backupEngine.startBackup(drive, profile, {
+        turboBackup: req.body?.turboBackup,
+      });
       res.json({ success: true, session });
     } catch (err: any) {
       res.status(400).json({ error: err.message });

@@ -20,6 +20,11 @@ try {
     expandWindow: () => ipcRenderer.invoke('window:expand'),
     showNotification: (opts) => ipcRenderer.invoke('tray:notify', opts),
     closeApp: () => ipcRenderer.invoke('app:quit'),
+    onWindowStateChange: (callback) => {
+      const handler = (_event, state) => callback(state);
+      ipcRenderer.on('window:state-changed', handler);
+      return () => ipcRenderer.removeListener('window:state-changed', handler);
+    },
     onExpand: (callback) => {
       const handler = () => callback();
       ipcRenderer.on('app:expand', handler);

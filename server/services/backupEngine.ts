@@ -60,13 +60,21 @@ export class BackupEngine extends EventEmitter {
   /**
    * Starts a backup run for a registered drive and its profile.
    */
-  public async startBackup(drive: RemovableDrive, profile: BackupProfile): Promise<BackupSession> {
+  public async startBackup(
+    drive: RemovableDrive,
+    profile: BackupProfile,
+    options?: { turboBackup?: boolean }
+  ): Promise<BackupSession> {
     if (this.isRunning()) {
       throw new Error('A backup session is already in progress.');
     }
 
     this.isCancelled = false;
     this.isPaused = false;
+
+    const settings = this.db.getSettings();
+    const useTurbo = options?.turboBackup !== undefined ? Boolean(options.turboBackup) : Boolean(settings.turboBackup ?? true);
+    const sessionMode: 'turbo' | 'standard' = useTurbo ? 'turbo' : 'standard';
 
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const session: BackupSession = {
@@ -75,6 +83,7 @@ export class BackupEngine extends EventEmitter {
       driveStableId: drive.stableHardwareId,
       driveName: profile.friendlyName || drive.friendlyName || drive.volumeLabel,
       driveLetter: drive.driveLetter,
+      mode: sessionMode,
       status: 'scanning',
       startTime: new Date().toISOString(),
       isInitialBackup: false,
@@ -94,7 +103,11 @@ export class BackupEngine extends EventEmitter {
 
     this.currentSession = session;
     this.db.saveBackupSession(session);
-    this.db.log('info', 'BackupEngine', `Initiating backup session for "${session.driveName}" [${drive.driveLetter}]`);
+    this.db.log(
+      'info',
+      'BackupEngine',
+      `Initiating backup session for "${session.driveName}" [${drive.driveLetter}] in ${sessionMode.toUpperCase()} mode`
+    );
     this.emit('session:start', session);
 
     // Run pipeline asynchronously
@@ -271,9 +284,14 @@ export class BackupEngine extends EventEmitter {
       ensuredDirs.add(targetDir);
     };
 
-    // Adaptive bounded concurrency: up to 16 parallel workers for small/mixed files, 4 for large files (> 30MB)
+    // Concurrency pipeline selection:
+    // If Turbo mode: bounded adaptive parallel workers (up to 16 for small/mixed files, 4 for large files)
+    // If Standard mode: strictly conservative single sequential worker (concurrency = 1)
+    const isTurbo = session.mode === 'turbo';
     const hasLargeFiles = comparison.toCopy.some((item) => item.size > 30 * 1024 * 1024);
-    const concurrency = hasLargeFiles ? 4 : Math.min(16, Math.max(4, comparison.toCopy.length));
+    const concurrency = isTurbo
+      ? (hasLargeFiles ? 4 : Math.min(16, Math.max(4, comparison.toCopy.length)))
+      : 1;
 
     let nextItemIndex = 0;
     let copyInterrupted = false;
@@ -323,36 +341,45 @@ export class BackupEngine extends EventEmitter {
           const targetDir = path.dirname(item.destinationPath);
           await ensureDirCached(targetDir);
 
-          // 1. High-throughput stream copy to staging path with on-the-fly SHA-256 calculation
-          const { sha256Hex } = await this.copyFileStreamedTurbo(
-            item.source.fullPath,
-            stagingPath,
-            (chunkBytes) => {
-              totalBytesCopiedSoFar += chunkBytes;
-              bytesSinceLastCheck += chunkBytes;
-              session.bytesTransferred = totalBytesCopiedSoFar;
+          const progressCallback = (chunkBytes: number) => {
+            totalBytesCopiedSoFar += chunkBytes;
+            bytesSinceLastCheck += chunkBytes;
+            session.bytesTransferred = totalBytesCopiedSoFar;
 
-              const now = Date.now();
-              const speedElapsed = (now - lastSpeedCheckTime) / 1000;
-              if (speedElapsed >= 0.4) {
-                session.currentSpeedBps = bytesSinceLastCheck / speedElapsed;
-                lastSpeedCheckTime = now;
-                bytesSinceLastCheck = 0;
+            const now = Date.now();
+            const speedElapsed = (now - lastSpeedCheckTime) / 1000;
+            if (speedElapsed >= 0.4) {
+              session.currentSpeedBps = bytesSinceLastCheck / speedElapsed;
+              lastSpeedCheckTime = now;
+              bytesSinceLastCheck = 0;
 
-                const remainingBytes = Math.max(0, session.bytesTotal - session.bytesTransferred);
-                if (session.currentSpeedBps > 0) {
-                  session.estimatedSecondsRemaining = Math.ceil(remainingBytes / session.currentSpeedBps);
-                }
+              const remainingBytes = Math.max(0, session.bytesTotal - session.bytesTransferred);
+              if (session.currentSpeedBps > 0) {
+                session.estimatedSecondsRemaining = Math.ceil(remainingBytes / session.currentSpeedBps);
               }
+            }
 
-              // Throttle UI event emissions to max once every 120ms to prevent event loop starvation
-              if (now - lastEmitTime >= 120) {
-                lastEmitTime = now;
-                this.emit('session:update', session);
-              }
-            },
-            profile.verifyBackups
-          );
+            // Throttle UI event emissions to max once every 120ms to prevent event loop starvation
+            if (now - lastEmitTime >= 120) {
+              lastEmitTime = now;
+              this.emit('session:update', session);
+            }
+          };
+
+          // Execute file copy using selected pipeline mode (Turbo vs Standard)
+          const { sha256Hex } = isTurbo
+            ? await this.copyFileStreamedTurbo(
+                item.source.fullPath,
+                stagingPath,
+                progressCallback,
+                profile.verifyBackups
+              )
+            : await this.copyFileStreamedStandard(
+                item.source.fullPath,
+                stagingPath,
+                progressCallback,
+                profile.verifyBackups
+              );
 
           if (sha256Hex) {
             precomputedHashes.set(item.source.fullPath, sha256Hex);
@@ -530,12 +557,50 @@ export class BackupEngine extends EventEmitter {
     });
   }
 
+  /**
+   * Standard conservative copy pipeline: strictly sequential, 64KB buffers, direct streaming,
+   * full SHA-256 calculation for destination verification.
+   */
+  private async copyFileStreamedStandard(
+    sourcePath: string,
+    destPath: string,
+    onChunk: (bytes: number) => void,
+    calculateHash: boolean = true
+  ): Promise<{ sha256Hex: string }> {
+    return new Promise((resolve, reject) => {
+      const hash = calculateHash ? crypto.createHash('sha256') : null;
+      const readStream = fs.createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
+      const writeStream = fs.createWriteStream(destPath, { highWaterMark: 64 * 1024 });
+
+      readStream.on('data', (chunk: Buffer | string) => {
+        if (hash) hash.update(chunk);
+        onChunk(chunk.length);
+      });
+
+      readStream.on('error', (err) => {
+        writeStream.destroy();
+        reject(err);
+      });
+
+      writeStream.on('error', (err) => {
+        readStream.destroy();
+        reject(err);
+      });
+
+      writeStream.on('finish', () => {
+        resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
+      });
+
+      readStream.pipe(writeStream);
+    });
+  }
+
   private async copyFileStreamed(
     sourcePath: string,
     destPath: string,
     onChunk: (bytes: number) => void
   ): Promise<void> {
-    await this.copyFileStreamedTurbo(sourcePath, destPath, onChunk, false);
+    await this.copyFileStreamedStandard(sourcePath, destPath, onChunk, false);
   }
 
   /**
@@ -585,6 +650,7 @@ export class BackupEngine extends EventEmitter {
         `Drive Name:       ${session.driveName}`,
         `Drive Letter:     ${session.driveLetter}`,
         `Session ID:       ${session.id}`,
+        `Pipeline Mode:    ${session.mode === 'turbo' ? 'TURBO BACKUP (Optimized Bounded Concurrency)' : 'STANDARD BACKUP (Conservative Sequential)'}`,
         `Start Time:       ${session.startTime}`,
         `End Time:         ${session.endTime || 'N/A'}`,
         `Status:           ${session.status.toUpperCase()}`,

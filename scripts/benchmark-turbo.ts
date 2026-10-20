@@ -51,7 +51,7 @@ async function main() {
     const dest = path.join(turboDestRoot, name);
     await cleanDir(dest);
 
-    const res = await runWorkload(name, folder, dest, true);
+    const res = await runWorkload(name, folder, dest, true, true);
     turboResults.push(res);
 
     const baseline = baselineMap.get(name);

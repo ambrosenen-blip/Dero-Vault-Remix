@@ -22,6 +22,7 @@ import { RegisteredDrivesView } from './components/RegisteredDrivesView';
 import { BackupProfilesView } from './components/BackupProfilesView';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
+import { HelpCentreView } from './components/HelpCentreView';
 import { UnregisteredDriveModal } from './components/UnregisteredDriveModal';
 import { DriveRegistrationModal } from './components/DriveRegistrationModal';
 import { ReportModal } from './components/ReportModal';
@@ -42,6 +43,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>({
     autoBackup: true,
     startOnConnect: true,
+    turboBackup: true,
     notifyOnStart: true,
     notifyOnComplete: true,
     verifyBackups: true,
@@ -243,19 +245,30 @@ export default function App() {
             });
           }
         } else {
-          // Compact tray notification for unregistered drive (NO full window forced open)
-          setTrayNotification({ type: 'unregistered', drive });
-          if ((window as any).electronAPI?.showNotification) {
-            (window as any).electronAPI.showNotification({
-              title: 'Dero Vault',
-              content: `New removable drive detected: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}).`,
-            });
+          // Priority 3 B:
+          // If main application is visible, display in-app notification / modal automatically
+          // If main application is hidden or minimised, use system tray notification
+          const isWindowVisible = typeof document !== 'undefined' && !document.hidden && !isMinimizedToTray;
+          if (isWindowVisible) {
+            setUnregisteredModalDrive(drive);
+          } else {
+            setTrayNotification({ type: 'unregistered', drive });
+            if ((window as any).electronAPI?.showNotification) {
+              (window as any).electronAPI.showNotification({
+                title: 'Dero Vault',
+                content: `New removable storage: ${drive.volumeLabel || 'Disk'} (${drive.driveLetter}). Click to configure.`,
+              });
+            }
           }
         }
       },
       onUnregisteredDetected: (drive) => {
-        // Tray-first: show compact tray notification with inline registration
-        setTrayNotification({ type: 'unregistered', drive });
+        const isWindowVisible = typeof document !== 'undefined' && !document.hidden && !isMinimizedToTray;
+        if (isWindowVisible) {
+          setUnregisteredModalDrive(drive);
+        } else {
+          setTrayNotification({ type: 'unregistered', drive });
+        }
       },
       onDisconnected: (drive) => {
         setActiveDrives((prev) =>
@@ -585,6 +598,8 @@ export default function App() {
                 registeredDrives={registeredDrives}
                 backupProfiles={backupProfiles}
                 history={history}
+                settings={settings}
+                onUpdateSettings={handleUpdateSettings}
                 onStartManualBackup={handleStartManualBackup}
                 onCancelBackup={handleCancelBackup}
                 onViewReport={(session) => setSelectedReportSession(session)}
@@ -633,7 +648,13 @@ export default function App() {
                   setLogs(res.logs);
                 }}
                 platformInfo={platformInfo}
+                isBackingUp={isBackingUp}
+                currentBackupMode={currentSession?.mode || (settings.turboBackup ? 'turbo' : 'standard')}
               />
+            )}
+
+            {currentTab === 'help' && (
+              <HelpCentreView onNavigateTab={(tab) => setCurrentTab(tab)} />
             )}
           </main>
         </div>

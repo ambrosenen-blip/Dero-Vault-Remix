@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Settings, Shield, FileText, Check, AlertCircle, RefreshCw, Terminal, Laptop, Download, ExternalLink } from 'lucide-react';
+import { Settings, Shield, FileText, Check, AlertCircle, RefreshCw, Terminal, Laptop, Download, ExternalLink, Zap } from 'lucide-react';
 import { AppLogEntry, AppSettings, PlatformInfo } from '../types';
 import { DeroGranaryEmblem } from './BrandLogo';
 
@@ -15,6 +15,8 @@ interface SettingsViewProps {
   logFilePath: string;
   onRefreshLogs: () => void;
   platformInfo?: PlatformInfo | null;
+  isBackingUp?: boolean;
+  currentBackupMode?: 'turbo' | 'standard';
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -24,6 +26,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   logFilePath,
   onRefreshLogs,
   platformInfo,
+  isBackingUp = false,
+  currentBackupMode = 'turbo',
 }) => {
   const [activeTab, setActiveTab] = useState<'preferences' | 'logs'>('preferences');
 
@@ -63,6 +67,116 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {activeTab === 'preferences' ? (
         <div className="space-y-6 text-xs font-['Inter',sans-serif]">
+          {/* Turbo Backup Control Section (Priority 1) */}
+          <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-5 space-y-4 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-[#1E3466]">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-[#F4A62A]" />
+                  <h3 className="text-sm font-bold font-['Poppins',sans-serif] text-white">
+                    Turbo Backup Engine
+                  </h3>
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      settings.turboBackup
+                        ? 'bg-[#F4A62A]/15 text-[#F4A62A] border-[#F4A62A]/40'
+                        : 'bg-slate-800 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    {settings.turboBackup ? 'Turbo Mode' : 'Standard Mode'}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px]">
+                  Choose between high-throughput bounded parallel copying and conservative sequential pipeline.
+                </p>
+              </div>
+
+              {/* Dedicated Two-State Control with Unmistakable States */}
+              <div className="flex items-center p-1 bg-[#081126] border border-[#1E3466] rounded-lg shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onUpdateSettings({ turboBackup: true })}
+                  className={`px-3 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-all ${
+                    settings.turboBackup
+                      ? 'bg-[#F4A62A] text-[#0D1B3D] shadow-sm font-semibold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Turbo Backup: ON</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onUpdateSettings({ turboBackup: false })}
+                  className={`px-3 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-all ${
+                    !settings.turboBackup
+                      ? 'bg-[#162852] text-white border border-[#1E3466] shadow-sm font-semibold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Turbo Backup: OFF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* If a backup is currently running, explain that changed preference applies to the next session */}
+            {isBackingUp && (
+              <div className="p-3 rounded-lg bg-[#162852]/70 border border-[#F4A62A]/30 text-[11px] text-[#F4A62A] flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold">
+                    A backup is currently running in {currentBackupMode === 'turbo' ? 'Turbo Mode' : 'Standard Mode'}.
+                  </span>
+                  <span className="block text-slate-300 mt-0.5">
+                    Your preference change will apply automatically starting with your next backup session.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Clear explanation of both modes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div
+                className={`p-3.5 rounded-lg border transition-all ${
+                  settings.turboBackup
+                    ? 'bg-[#132247]/60 border-[#F4A62A]/40'
+                    : 'bg-[#081126] border-[#1E3466]'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-white font-semibold mb-1">
+                  <Zap className="w-3.5 h-3.5 text-[#F4A62A]" />
+                  <span>Turbo Backup: ON (Optimized Pipeline)</span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  Uses the application’s optimised backup pipeline with adaptive bounded parallel workers (up to 16 workers for small/mixed office files, 4 for large files), 512KB streaming buffers, and pipelined SHA-256 calculation.
+                </p>
+              </div>
+
+              <div
+                className={`p-3.5 rounded-lg border transition-all ${
+                  !settings.turboBackup
+                    ? 'bg-[#132247]/60 border-slate-400'
+                    : 'bg-[#081126] border-[#1E3466]'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-white font-semibold mb-1">
+                  <Shield className="w-3.5 h-3.5 text-slate-300" />
+                  <span>Turbo Backup: OFF (Standard Safe Pipeline)</span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  Uses the application’s supported standard conservative backup pipeline. Files are copied strictly sequentially one-by-one with standard 64KB buffers. Recommended for slower legacy USB flash drives or bus-powered mechanical HDDs.
+                </p>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-400 bg-[#081126]/60 p-2.5 rounded-lg border border-[#1E3466]">
+              <span className="text-slate-300 font-semibold">Integrity Guarantee: </span>
+              Both modes strictly enforce atomic file staging via <code className="text-[#F4A62A] font-mono">.dero_part</code> files, revision retention in <code className="text-[#F4A62A] font-mono">VERSIONS</code>, destination size validation, and cryptographic SHA-256 integrity verification. Integrity checks are never weakened.
+            </div>
+          </div>
+
           {/* Automatic Backup Section */}
           <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-5 space-y-4">
             <h3 className="text-sm font-semibold font-['Poppins',sans-serif] text-white flex items-center gap-2">

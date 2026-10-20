@@ -86,6 +86,9 @@ export interface BackupSession {
   currentSpeedBps: number;
   estimatedSecondsRemaining: number;
   
+  // Mode
+  mode?: 'turbo' | 'standard';
+
   isVerified: boolean;
   verificationNotes?: string;
   
@@ -98,6 +101,7 @@ export interface BackupSession {
 export interface AppSettings {
   autoBackup: boolean;
   startOnConnect: boolean;
+  turboBackup: boolean;
   notifyOnStart: boolean;
   notifyOnComplete: boolean;
   verifyBackups: boolean;

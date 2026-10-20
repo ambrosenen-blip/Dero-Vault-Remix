@@ -1,0 +1,50 @@
+[
+  {
+    "workload": "many_small",
+    "fileCount": 500,
+    "bytes": 5127750,
+    "baselineMs": 943.2391229999998,
+    "turboMs": 450.2611790000001,
+    "elapsedReductionPercent": 52.264365628947715,
+    "speedupFactor": 2.0948710814795777,
+    "baselineMBs": 5.184479053836012,
+    "turboMBs": 10.860815242417663,
+    "verified": true
+  },
+  {
+    "workload": "large_files",
+    "fileCount": 3,
+    "bytes": 83886080,
+    "baselineMs": 1058.918263,
+    "turboMs": 927.3269989999999,
+    "elapsedReductionPercent": 12.426951975234763,
+    "speedupFactor": 1.1419038420556114,
+    "baselineMBs": 75.54879615859454,
+    "turboMBs": 86.26946059617532,
+    "verified": true
+  },
+  {
+    "workload": "mixed_office",
+    "fileCount": 60,
+    "bytes": 85346304,
+    "baselineMs": 1129.2676989999995,
+    "turboMs": 864.484868,
+    "elapsedReductionPercent": 23.44730405682131,
+    "speedupFactor": 1.3062897232806157,
+    "baselineMBs": 72.07553903921593,
+    "turboMBs": 94.15153594683858,
+    "verified": true
+  },
+  {
+    "workload": "incremental_unchanged",
+    "fileCount": 60,
+    "bytes": 0,
+    "baselineMs": 16.74384000000009,
+    "turboMs": 17.54213299999992,
+    "elapsedReductionPercent": -4.767681726532421,
+    "speedupFactor": 0.9544928202288836,
+    "baselineMBs": 0,
+    "turboMBs": 0,
+    "verified": true
+  }
+]

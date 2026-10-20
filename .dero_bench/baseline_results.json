@@ -1,0 +1,46 @@
+[
+  {
+    "workload": "many_small",
+    "filesScanned": 500,
+    "filesCopied": 500,
+    "filesSkipped": 0,
+    "bytesTransferred": 5127750,
+    "elapsedMs": 943.2391229999998,
+    "throughputMBs": 5.184479053836012,
+    "peakMemoryMB": 11.3514404296875,
+    "isVerified": true
+  },
+  {
+    "workload": "large_files",
+    "filesScanned": 3,
+    "filesCopied": 3,
+    "filesSkipped": 0,
+    "bytesTransferred": 83886080,
+    "elapsedMs": 1058.918263,
+    "throughputMBs": 75.54879615859454,
+    "peakMemoryMB": 9.213874816894531,
+    "isVerified": true
+  },
+  {
+    "workload": "mixed_office",
+    "filesScanned": 60,
+    "filesCopied": 60,
+    "filesSkipped": 0,
+    "bytesTransferred": 85346304,
+    "elapsedMs": 1129.2676989999995,
+    "throughputMBs": 72.07553903921593,
+    "peakMemoryMB": 9.107826232910156,
+    "isVerified": true
+  },
+  {
+    "workload": "incremental_unchanged",
+    "filesScanned": 60,
+    "filesCopied": 0,
+    "filesSkipped": 60,
+    "bytesTransferred": 0,
+    "elapsedMs": 16.74384000000009,
+    "throughputMBs": 0,
+    "peakMemoryMB": 7.6712646484375,
+    "isVerified": true
+  }
+]

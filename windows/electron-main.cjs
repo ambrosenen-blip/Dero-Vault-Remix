@@ -871,6 +871,9 @@ function createWindow() {
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
   const icon = nativeImage.createFromPath(iconPath);
 
+  // Remove redundant native File, Edit, View, Window menu bar completely
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -878,7 +881,7 @@ function createWindow() {
     minHeight: 640,
     title: 'Dero Vault — Your Digital Granary',
     icon: icon.isEmpty() ? undefined : icon,
-    frame: true,
+    frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#020617', // Slate-950
     webPreferences: {
@@ -890,6 +893,18 @@ function createWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
+
+  mainWindow.on('maximize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window:state-changed', { isMaximized: true });
+    }
+  });
+
+  mainWindow.on('unmaximize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window:state-changed', { isMaximized: false });
+    }
+  });
 
   const appUrl = `http://127.0.0.1:${SERVER_PORT}`;
 
@@ -1446,6 +1461,20 @@ function createTray() {
       {
         label: 'Exit Dero Vault',
         click: () => {
+          if (appState.activeBackupSession && ['scanning', 'comparing', 'copying', 'verifying'].includes(appState.activeBackupSession.status)) {
+            const choice = dialog.showMessageBoxSync(mainWindow || null, {
+              type: 'warning',
+              buttons: ['Cancel', 'Quit Anyway'],
+              defaultId: 0,
+              cancelId: 0,
+              title: 'Dero Vault — Active Backup in Progress',
+              message: 'A backup is currently in progress. Exiting now may interrupt file copying.',
+              detail: 'Do you want to cancel the backup and quit immediately?',
+            });
+            if (choice !== 1) {
+              return;
+            }
+          }
           app.isQuitting = true;
           app.quit();
         },
