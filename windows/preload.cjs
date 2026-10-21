@@ -61,6 +61,16 @@ try {
       ipcRenderer.on('drive:disconnected', handler);
       return () => ipcRenderer.removeListener('drive:disconnected', handler);
     },
+    onReminderDue: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('reminder:due', handler);
+      return () => ipcRenderer.removeListener('reminder:due', handler);
+    },
+    onReminderStatus: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('reminder:status', handler);
+      return () => ipcRenderer.removeListener('reminder:status', handler);
+    },
   });
 
   console.log(`[Preload] [${new Date().toISOString()}] electronAPI bridge successfully exposed in main world.`);

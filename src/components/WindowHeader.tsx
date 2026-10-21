@@ -81,13 +81,20 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({
         <div className="relative flex items-center justify-center shrink-0">
           <DeroGranaryEmblem size={22} showGlow={true} />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="font-['Poppins',sans-serif] font-bold text-white tracking-tight text-sm leading-none">
-            DERO VAULT
-          </span>
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center">
+            <span className="font-['Poppins',sans-serif] font-bold text-white tracking-tight text-sm leading-none">
+              DERO VAULT
+            </span>
+            <sup className="text-[#F4A62A] text-[9px] font-bold ml-0.5">™</sup>
+          </div>
           <span className="text-[#F4A62A] text-xs" aria-hidden="true">·</span>
           <span className="text-slate-300 font-normal hidden sm:inline text-[11px] leading-none">
             Your digital granary.
+          </span>
+          <span className="text-slate-600 font-mono text-[10px] hidden lg:inline" aria-hidden="true">|</span>
+          <span className="text-slate-400 font-normal hidden lg:inline text-[10px] leading-none">
+            a product of <strong className="text-slate-300 font-medium">Enen Digital Labs™</strong>
           </span>
         </div>
       </div>

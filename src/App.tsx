@@ -10,8 +10,10 @@ import {
   AppLogEntry,
   AppSettings,
   BackupProfile,
+  BackupReminderSettings,
   BackupSession,
   PlatformInfo,
+  ReminderStatus,
   RemovableDrive,
   SourceFolderOption,
 } from './types';
@@ -23,6 +25,7 @@ import { BackupProfilesView } from './components/BackupProfilesView';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
 import { HelpCentreView } from './components/HelpCentreView';
+import { ReminderBanner } from './components/ReminderBanner';
 import { UnregisteredDriveModal } from './components/UnregisteredDriveModal';
 import { DriveRegistrationModal } from './components/DriveRegistrationModal';
 import { ReportModal } from './components/ReportModal';
@@ -31,7 +34,7 @@ import { SystemTrayMenu } from './components/SystemTrayMenu';
 import { CompactTrayNotification, TrayNotificationState } from './components/CompactTrayNotification';
 import { DownloadModal } from './components/DownloadModal';
 import { Shield, HardDrive, Maximize2, Settings, History, CheckCircle2, Download } from 'lucide-react';
-import { DeroGranaryEmblem, DeroWordmark, DeroAppIcon } from './components/BrandLogo';
+import { DeroGranaryEmblem, DeroWordmark, DeroAppIcon, EnenDigitalLabsLogo } from './components/BrandLogo';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -66,12 +69,13 @@ export default function App() {
   // Default to full dashboard view when window is opened
   const [isMinimizedToTray, setIsMinimizedToTray] = useState(false);
   const [trayNotification, setTrayNotification] = useState<TrayNotificationState>(null);
+  const [reminderStatus, setReminderStatus] = useState<ReminderStatus | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initial Data Load
   const refreshAll = async (retries = 3) => {
     try {
-      const [driveData, backupData, historyData, settingsData, sourcesData, logData, platformData] =
+      const [driveData, backupData, historyData, settingsData, sourcesData, logData, platformData, remStatus] =
         await Promise.all([
           ApiClient.getDrives(),
           ApiClient.getCurrentBackup(),
@@ -80,11 +84,15 @@ export default function App() {
           ApiClient.getSystemFolders(),
           ApiClient.getLogs(),
           ApiClient.getPlatformInfo().catch(() => null),
+          ApiClient.getReminderStatus().catch(() => null),
         ]);
 
       setActiveDrives(driveData.drives || []);
       setRegisteredDrives(driveData.registered || []);
       setBackupProfiles(driveData.profiles || []);
+      if (remStatus) {
+        setReminderStatus(remStatus);
+      }
 
       // If any connected drive is unregistered, show compact tray notification (not full modal)
       const unregistered = (driveData.drives || []).find(
@@ -359,6 +367,15 @@ export default function App() {
       onSettingsUpdated: (updated) => {
         setSettings(updated);
       },
+      onReminderDue: (notif) => {
+        setReminderStatus((prev) =>
+          prev ? { ...prev, isDue: true, activeReminderNotification: notif } : null
+        );
+        ApiClient.getReminderStatus().then(setReminderStatus).catch(() => {});
+      },
+      onReminderStatus: (status) => {
+        setReminderStatus(status);
+      },
     });
 
     return () => {
@@ -558,6 +575,60 @@ export default function App() {
     }
   };
 
+  const handleUpdateReminderSettings = async (updates: Partial<BackupReminderSettings>) => {
+    try {
+      const updated = await ApiClient.updateReminderSettings(updates);
+      setReminderStatus(updated);
+    } catch (err: any) {
+      setTrayNotification({
+        type: 'error',
+        title: 'Reminder Settings Failed',
+        message: err.message || 'Could not update reminder settings.',
+      });
+    }
+  };
+
+  const handleSnoozeReminder = async (minutes: number) => {
+    try {
+      const updated = await ApiClient.snoozeReminder(minutes);
+      setReminderStatus(updated);
+      setTrayNotification({
+        type: 'info',
+        title: 'Reminder Snoozed',
+        message: `Postponed for ${minutes >= 60 ? `${Math.round(minutes / 60)} hour(s)` : `${minutes} minutes`}.`,
+      });
+    } catch (err: any) {
+      console.error('Failed to snooze reminder:', err);
+    }
+  };
+
+  const handleClearSnooze = async () => {
+    try {
+      const updated = await ApiClient.clearReminderSnooze();
+      setReminderStatus(updated);
+    } catch (err: any) {
+      console.error('Failed to clear snooze:', err);
+    }
+  };
+
+  const handleDismissReminder = async () => {
+    try {
+      const updated = await ApiClient.dismissReminder();
+      setReminderStatus(updated);
+    } catch (err: any) {
+      console.error('Failed to dismiss reminder:', err);
+    }
+  };
+
+  const handleTriggerTestReminder = async () => {
+    try {
+      const updated = await ApiClient.triggerTestReminder();
+      setReminderStatus(updated);
+    } catch (err: any) {
+      console.error('Failed to trigger test reminder:', err);
+    }
+  };
+
   const isBackingUp =
     currentSession !== null &&
     ['scanning', 'comparing', 'copying', 'verifying'].includes(currentSession.status);
@@ -591,6 +662,27 @@ export default function App() {
 
           {/* Tab Views */}
           <main className="flex-1 overflow-y-auto">
+            {/* Prominent In-App Reminder Banner (when reminder is due/active) */}
+            {reminderStatus?.activeReminderNotification && (
+              <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-5">
+                <ReminderBanner
+                  notification={reminderStatus.activeReminderNotification}
+                  connectedRegisteredDrive={activeDrives.find((d) => d.isConnected && d.isRegistered) || null}
+                  onStartBackup={() => {
+                    const regDrive = activeDrives.find((d) => d.isConnected && d.isRegistered);
+                    if (regDrive) {
+                      handleStartManualBackup(regDrive.stableHardwareId);
+                    } else {
+                      setCurrentTab('dashboard');
+                    }
+                  }}
+                  onNavigateToDashboard={() => setCurrentTab('dashboard')}
+                  onSnooze={handleSnoozeReminder}
+                  onDismiss={handleDismissReminder}
+                />
+              </div>
+            )}
+
             {currentTab === 'dashboard' && (
               <Dashboard
                 currentSession={currentSession}
@@ -650,6 +742,12 @@ export default function App() {
                 platformInfo={platformInfo}
                 isBackingUp={isBackingUp}
                 currentBackupMode={currentSession?.mode || (settings.turboBackup ? 'turbo' : 'standard')}
+                reminderStatus={reminderStatus}
+                onUpdateReminderSettings={handleUpdateReminderSettings}
+                onSnoozeReminder={handleSnoozeReminder}
+                onClearSnooze={handleClearSnooze}
+                onTriggerTestReminder={handleTriggerTestReminder}
+                onOpenWelcomeModal={() => setIsWelcomeOpen(true)}
               />
             )}
 
@@ -684,6 +782,10 @@ export default function App() {
 
             <div className="flex flex-col items-center">
               <DeroWordmark variant="dark" size="lg" showTagline={true} />
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-slate-400">
+                <span>A product of</span>
+                <EnenDigitalLabsLogo size="sm" showText={true} showTagline={false} />
+              </div>
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto pt-1 font-['Inter',sans-serif]">
@@ -814,13 +916,16 @@ export default function App() {
         onClose={() => setSelectedReportSession(null)}
       />
 
-      {/* Modal 4: First Launch Experience Welcome */}
+      {/* Modal 4: First Launch Experience Welcome & Setup Wizard */}
       <WelcomeModal
         isOpen={isWelcomeOpen}
         onGetStarted={() => {
           localStorage.setItem('dero_vault_welcome_shown', 'true');
           setIsWelcomeOpen(false);
         }}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onUpdateReminderSettings={handleUpdateReminderSettings}
       />
 
       {/* Modal 5: Download Installable Software Modal */}

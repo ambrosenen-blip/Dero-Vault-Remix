@@ -371,6 +371,9 @@ export const DeroWordmark: React.FC<WordmarkProps> = ({
         >
           ERO
         </span>
+        <sup className="text-[#F4A62A] font-bold text-[9px] sm:text-[11px] ml-0.5 select-none font-sans">
+          ™
+        </sup>
       </div>
 
       {/* Sub-label: — VAULT — */}
@@ -500,7 +503,7 @@ export const DeroAppIcon: React.FC<AppIconProps> = ({
             isLight ? 'text-[#0D1B3D]' : 'text-white'
           }`}
         >
-          DERO
+          DERO™
         </div>
         <div className="text-[8px] font-bold text-[#F4A62A] tracking-[0.2em] mt-0.5">
           — VAULT —
@@ -509,3 +512,150 @@ export const DeroAppIcon: React.FC<AppIconProps> = ({
     </div>
   );
 };
+
+interface EnenLogoProps {
+  className?: string;
+  size?: number | 'sm' | 'md' | 'lg' | 'xl';
+  showTagline?: boolean;
+  showText?: boolean;
+  variant?: 'light' | 'dark';
+}
+
+/**
+ * Official Enen Digital Labs™ Logo Component
+ * Renders the original high-resolution Enen Digital Labs mark and typography
+ */
+export const EnenDigitalLabsLogo: React.FC<EnenLogoProps> = ({
+  className = '',
+  size = 'md',
+  showTagline = false,
+  showText = true,
+  variant = 'dark',
+}) => {
+  const sizeMap = {
+    sm: { img: 24, text: 'text-xs', sub: 'text-[9px]' },
+    md: { img: 36, text: 'text-sm', sub: 'text-[10px]' },
+    lg: { img: 48, text: 'text-base', sub: 'text-xs' },
+    xl: { img: 64, text: 'text-lg', sub: 'text-sm' },
+  };
+
+  const dim = typeof size === 'number' ? { img: size, text: 'text-sm', sub: 'text-[10px]' } : sizeMap[size];
+
+  return (
+    <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
+      {/* Official Enen Digital Labs Original Logo Avatar */}
+      <div className="relative shrink-0 overflow-hidden rounded-lg bg-white/5 p-0.5 border border-white/10 shadow-xs">
+        <img
+          src="/assets/aistudio/Enen_Digital_Labs_Logo_Original_c895c4f3.png"
+          alt="Enen Digital Labs™"
+          style={{ width: dim.img, height: dim.img }}
+          className="object-contain rounded-md"
+          loading="eager"
+        />
+      </div>
+
+      {showText && (
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1 leading-none">
+            <span className={`font-['Poppins',sans-serif] font-extrabold tracking-wider ${dim.text} ${
+              variant === 'light' ? 'text-[#0D1B3D]' : 'text-white'
+            }`}>
+              ENEN
+            </span>
+            <span className={`font-['Poppins',sans-serif] font-medium tracking-widest text-[#00A884] ${dim.text}`}>
+              DIGITAL LABS
+            </span>
+            <sup className="text-[#F4A62A] text-[9px] font-bold leading-none">™</sup>
+          </div>
+          {showTagline && (
+            <span className={`font-['Inter',sans-serif] ${dim.sub} text-slate-400 mt-0.5 tracking-tight`}>
+              Building Trust. Designing Impact. Delivering Future.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface DeroVaultFullLogoProps {
+  className?: string;
+  size?: number | 'sm' | 'md' | 'lg' | 'xl';
+  showTagline?: boolean;
+}
+
+/**
+ * Full Dero Vault™ Logo rendering the official brand raster asset with high fidelity
+ */
+export const DeroVaultFullLogo: React.FC<DeroVaultFullLogoProps> = ({
+  className = '',
+  size = 'md',
+  showTagline = true,
+}) => {
+  const heightMap = {
+    sm: 52,
+    md: 78,
+    lg: 110,
+    xl: 140,
+  };
+  const h = typeof size === 'number' ? size : heightMap[size];
+
+  return (
+    <div className={`flex flex-col items-center select-none ${className}`}>
+      <img
+        src="/assets/brand/dero-vault-logo-full.png"
+        alt="Dero Vault™ — Your digital granary."
+        style={{ height: h, width: 'auto' }}
+        className="object-contain drop-shadow-md"
+        loading="eager"
+      />
+      {showTagline && (
+        <p className="text-xs text-slate-300 font-['Inter',sans-serif] mt-1 text-center">
+          Your digital granary.
+        </p>
+      )}
+    </div>
+  );
+};
+
+interface CoBrandedLockupProps {
+  className?: string;
+  variant?: 'light' | 'dark';
+  compact?: boolean;
+}
+
+/**
+ * Co-branded lockup presenting Dero Vault™ as a proud product of Enen Digital Labs™
+ */
+export const CoBrandedLockup: React.FC<CoBrandedLockupProps> = ({
+  className = '',
+  variant = 'dark',
+  compact = false,
+}) => {
+  const isLight = variant === 'light';
+
+  return (
+    <div className={`flex items-center gap-3 select-none ${className}`}>
+      <DeroGranaryEmblem size={compact ? 28 : 36} showGlow={true} />
+      <div className="flex flex-col">
+        <div className="flex items-center gap-1.5">
+          <span className={`font-['Poppins',sans-serif] font-black text-sm tracking-tight ${
+            isLight ? 'text-[#0D1B3D]' : 'text-white'
+          }`}>
+            DERO VAULT
+          </span>
+          <sup className="text-[#F4A62A] text-[9px] font-bold">™</sup>
+          <span className="text-slate-600 font-mono text-xs">·</span>
+          <span className="text-[11px] text-[#F4A62A] font-medium hidden sm:inline">
+            Your digital granary
+          </span>
+        </div>
+        <div className="flex items-center gap-1 text-[10px] text-slate-400">
+          <span>A product of</span>
+          <span className="font-semibold text-slate-200">Enen Digital Labs™</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+

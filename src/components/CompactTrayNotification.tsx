@@ -48,6 +48,11 @@ export type TrayNotificationState =
       message: string;
       session?: BackupSession;
     }
+  | {
+      type: 'info';
+      title: string;
+      message: string;
+    }
   | null;
 
 interface CompactTrayNotificationProps {
@@ -611,6 +616,45 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
             >
               <span>Open Dero Vault for Details</span>
               <Maximize2 className="w-3.5 h-3.5 text-[#F4A62A]" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 6. INFORMATIONAL NOTIFICATION */}
+      {notification.type === 'info' && (
+        <div className="p-4 space-y-3">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-[#00A884]/15 text-[#00A884] border border-[#00A884]/30 flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white">DERO VAULT</h4>
+                <p className="text-[11px] font-semibold text-white">
+                  {notification.title || 'Information'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onDismiss}
+              className="p-1 rounded text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed">
+            {notification.message}
+          </p>
+
+          <div className="flex items-center justify-end pt-1 border-t border-[#1E3466] text-xs">
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="px-3 py-1.5 bg-[#132247] hover:bg-[#1A2E5E] text-slate-100 rounded-lg text-xs font-medium transition-colors"
+            >
+              Dismiss
             </button>
           </div>
         </div>

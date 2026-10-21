@@ -773,6 +773,28 @@ function handleBackendStateChange(eventType, data) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('backup:complete', data);
     }
+  } else if (eventType === 'reminder:due' && data) {
+    console.log(`[Notification] [${new Date().toISOString()}] Backup reminder due: ${data.message}`);
+    showTrayNotification({
+      title: 'Dero Vault — Backup Reminder',
+      content: data.message || "Time to plug in your vault drive and secure your work.",
+      type: 'info',
+      onClick: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    });
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('reminder:due', data);
+    }
+  } else if (eventType === 'reminder:status' && data) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('reminder:status', data);
+    }
   }
 }
 
@@ -879,7 +901,7 @@ function createWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 640,
-    title: 'Dero Vault — Your Digital Granary',
+    title: 'Dero Vault™ — Your Digital Granary | A product of Enen Digital Labs™',
     icon: icon.isEmpty() ? undefined : icon,
     frame: false,
     autoHideMenuBar: true,

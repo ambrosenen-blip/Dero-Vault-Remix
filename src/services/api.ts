@@ -2,7 +2,18 @@
  * Dero Vault — API Client & Event Source
  */
 
-import { AppLogEntry, AppSettings, BackupProfile, BackupSession, PlatformInfo, RemovableDrive, SourceFolderOption } from '../types';
+import {
+  AppLogEntry,
+  AppSettings,
+  BackupProfile,
+  BackupReminderSettings,
+  BackupSession,
+  PlatformInfo,
+  ReminderNotificationData,
+  ReminderStatus,
+  RemovableDrive,
+  SourceFolderOption,
+} from '../types';
 
 const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
@@ -122,6 +133,45 @@ export class ApiClient {
     });
   }
 
+  // --- Backup Reminders API ---
+  public static async getReminderStatus(): Promise<ReminderStatus> {
+    return this.safeFetchJson<ReminderStatus>('/api/reminders/status');
+  }
+
+  public static async updateReminderSettings(settings: Partial<BackupReminderSettings>): Promise<ReminderStatus> {
+    return this.safeFetchJson<ReminderStatus>('/api/reminders/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+  }
+
+  public static async snoozeReminder(minutes: number = 60): Promise<ReminderStatus> {
+    return this.safeFetchJson<ReminderStatus>('/api/reminders/snooze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minutes }),
+    });
+  }
+
+  public static async clearReminderSnooze(): Promise<ReminderStatus> {
+    return this.safeFetchJson<ReminderStatus>('/api/reminders/clear-snooze', {
+      method: 'POST',
+    });
+  }
+
+  public static async dismissReminder(): Promise<ReminderStatus> {
+    return this.safeFetchJson<ReminderStatus>('/api/reminders/dismiss', {
+      method: 'POST',
+    });
+  }
+
+  public static async triggerTestReminder(): Promise<ReminderStatus> {
+    return this.safeFetchJson<ReminderStatus>('/api/reminders/test', {
+      method: 'POST',
+    });
+  }
+
   public static async getSystemFolders(): Promise<{ folders: { name: string; path: string; fileCount: number }[] }> {
     return this.safeFetchJson('/api/system/folders');
   }
@@ -167,6 +217,8 @@ export class ApiClient {
     onBackupUpdate?: (session: BackupSession) => void;
     onBackupComplete?: (session: BackupSession) => void;
     onSettingsUpdated?: (settings: AppSettings) => void;
+    onReminderDue?: (data: ReminderNotificationData) => void;
+    onReminderStatus?: (status: ReminderStatus) => void;
   }): () => void {
     if (this.eventSource) {
       this.eventSource.close();
@@ -261,6 +313,14 @@ export class ApiClient {
         es.addEventListener('settings:updated', (e) => {
           try { callbacks.onSettingsUpdated?.(JSON.parse(e.data)); } catch {}
         });
+
+        es.addEventListener('reminder:due', (e) => {
+          try { callbacks.onReminderDue?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('reminder:status', (e) => {
+          try { callbacks.onReminderStatus?.(JSON.parse(e.data)); } catch {}
+        });
       } catch (connErr) {
         console.warn(`[ApiClient] Failed to instantiate EventSource:`, connErr);
       }
@@ -293,6 +353,18 @@ export class ApiClient {
       if (typeof api.onDriveDisconnected === 'function') {
         const cleanup = api.onDriveDisconnected((drive: RemovableDrive) => {
           callbacks.onDisconnected?.(drive);
+        });
+        ipcCleanups.push(cleanup);
+      }
+      if (typeof api.onReminderDue === 'function') {
+        const cleanup = api.onReminderDue((data: ReminderNotificationData) => {
+          callbacks.onReminderDue?.(data);
+        });
+        ipcCleanups.push(cleanup);
+      }
+      if (typeof api.onReminderStatus === 'function') {
+        const cleanup = api.onReminderStatus((status: ReminderStatus) => {
+          callbacks.onReminderStatus?.(status);
         });
         ipcCleanups.push(cleanup);
       }

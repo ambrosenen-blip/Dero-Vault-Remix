@@ -23,7 +23,7 @@ import {
   Layers,
   Sparkles,
 } from 'lucide-react';
-import { DeroGranaryEmblem, DeroWordmark } from './BrandLogo';
+import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo } from './BrandLogo';
 
 export const HelpCentreView: React.FC<{
   onNavigateTab?: (tab: 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings') => void;
@@ -187,6 +187,60 @@ export const HelpCentreView: React.FC<{
                 <p className="text-xs text-slate-300 leading-relaxed">
                   Laptops break, fall, get lost, or short circuit. If your laptop disappears today, can you plug your USB drive into another computer tomorrow and resume work immediately? With Dero Vault, yes. Your files are transparently mirrored without proprietary encodings.
                 </p>
+              </div>
+            </div>
+
+            {/* Enen Digital Labs™ Brand Story & Foundational Pillars */}
+            <div className="pt-4 border-t border-[#1E3466]/80 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <EnenDigitalLabsLogo size="md" showText={true} showTagline={true} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#00A884] bg-[#00A884]/15 px-2.5 py-1 rounded-full border border-[#00A884]/30 self-start sm:self-auto font-['Poppins',sans-serif]">
+                  Engineering The Future
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed font-['Inter',sans-serif]">
+                Dero Vault™ was conceived, designed, and engineered by <strong>Enen Digital Labs™</strong>. At Enen Digital Labs, our mission is simple yet uncompromising: <span className="text-white font-medium">"Building Trust. Designing Impact. Delivering Future."</span> We build software that treats your autonomy, privacy, and data ownership as sacred principles.
+              </p>
+
+              {/* 5 Core Pillars from Enen Digital Labs Brand Mark */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+                <div className="p-3 rounded-xl bg-[#081126] border border-[#1E3466] text-center space-y-1">
+                  <div className="text-[#38BDF8] font-bold text-[11px] font-['Poppins',sans-serif]">
+                    IDENTITY
+                  </div>
+                  <div className="text-[10px] text-slate-400">Verified &amp; Sovereign</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#081126] border border-[#1E3466] text-center space-y-1">
+                  <div className="text-[#00A884] font-bold text-[11px] font-['Poppins',sans-serif]">
+                    TRUST
+                  </div>
+                  <div className="text-[10px] text-slate-400">By Design &amp; Action</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#081126] border border-[#1E3466] text-center space-y-1">
+                  <div className="text-[#F4A62A] font-bold text-[11px] font-['Poppins',sans-serif]">
+                    TECHNOLOGY
+                  </div>
+                  <div className="text-[10px] text-slate-400">At Our Core</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#081126] border border-[#1E3466] text-center space-y-1">
+                  <div className="text-[#A855F7] font-bold text-[11px] font-['Poppins',sans-serif]">
+                    LABS MINDSET
+                  </div>
+                  <div className="text-[10px] text-slate-400">Innovate &amp; Impact</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#081126] border border-[#1E3466] text-center space-y-1 col-span-2 sm:col-span-1">
+                  <div className="text-[#EC4899] font-bold text-[11px] font-['Poppins',sans-serif]">
+                    HUMAN IMPACT
+                  </div>
+                  <div className="text-[10px] text-slate-400">Empowering Lives</div>
+                </div>
               </div>
             </div>
           </div>

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import { LocalDatabase } from './server/services/localDb.js';
 import { DriveDetector } from './server/services/driveDetector.js';
 import { BackupEngine } from './server/services/backupEngine.js';
+import { ReminderScheduler } from './server/services/reminderScheduler.js';
 import { RemovableDrive } from './server/types.js';
 import { PlatformService } from './server/platform/index.js';
 
@@ -87,6 +88,12 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
       }
     }
   };
+
+  // Dedicated persistent reminder scheduler (never reset on client navigation/re-renders)
+  const reminderScheduler = new ReminderScheduler(db, backupEngine, {
+    broadcast: broadcastEvent,
+  });
+  reminderScheduler.start();
 
   // Heartbeat to keep SSE clients alive across OS/firewall boundaries
   const heartbeatInterval = setInterval(() => {
@@ -177,6 +184,11 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     if (currentSession) {
       res.write(`event: backup:catchup\ndata: ${JSON.stringify(currentSession)}\n\n`);
     }
+
+    // Push current authoritative reminder status on client connect
+    const reminderStatus = reminderScheduler.getStatus();
+    res.write(`event: reminder:status\ndata: ${JSON.stringify(reminderStatus)}\n\n`);
+
     if (typeof (res as any).flush === 'function') {
       (res as any).flush();
     }
@@ -478,8 +490,42 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
 
   app.put('/api/settings', (req: Request, res: Response) => {
     const updated = db.updateSettings(req.body);
+    if (req.body?.reminders) {
+      reminderScheduler.updateSettings(req.body.reminders);
+    }
     broadcastEvent('settings:updated', updated);
     res.json(updated);
+  });
+
+  // 4b. Backup Reminders API
+  app.get('/api/reminders/status', (_req: Request, res: Response) => {
+    res.json(reminderScheduler.getStatus());
+  });
+
+  app.put('/api/reminders/settings', (req: Request, res: Response) => {
+    const updatedStatus = reminderScheduler.updateSettings(req.body);
+    res.json(updatedStatus);
+  });
+
+  app.post('/api/reminders/snooze', (req: Request, res: Response) => {
+    const minutes = typeof req.body?.minutes === 'number' ? req.body.minutes : 60;
+    const updatedStatus = reminderScheduler.snooze(minutes);
+    res.json(updatedStatus);
+  });
+
+  app.post('/api/reminders/clear-snooze', (_req: Request, res: Response) => {
+    const updatedStatus = reminderScheduler.clearSnooze();
+    res.json(updatedStatus);
+  });
+
+  app.post('/api/reminders/dismiss', (_req: Request, res: Response) => {
+    const updatedStatus = reminderScheduler.dismiss();
+    res.json(updatedStatus);
+  });
+
+  app.post('/api/reminders/test', (_req: Request, res: Response) => {
+    const updatedStatus = reminderScheduler.triggerTestReminder();
+    res.json(updatedStatus);
   });
 
   // 5. Logs & Artifacts

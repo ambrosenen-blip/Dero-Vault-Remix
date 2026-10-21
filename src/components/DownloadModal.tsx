@@ -17,7 +17,7 @@ import {
   ArrowRight,
   ShieldCheck,
 } from 'lucide-react';
-import { DeroGranaryEmblem } from './BrandLogo';
+import { DeroGranaryEmblem, EnenDigitalLabsLogo } from './BrandLogo';
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -63,16 +63,24 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose })
       <div className="w-full max-w-2xl bg-[#0D1B3D] border border-[#1E3466] rounded-2xl shadow-2xl p-6 sm:p-7 space-y-6 text-slate-100 my-8">
         {/* Modal Header */}
         <div className="flex items-start justify-between pb-4 border-b border-[#1E3466]">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3.5">
             <div className="flex items-center justify-center">
-              <DeroGranaryEmblem size={38} showGlow={true} />
+              <DeroGranaryEmblem size={42} showGlow={true} />
             </div>
             <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#F4A62A] font-['Poppins',sans-serif]">
-                Installable Software
-              </span>
-              <h3 className="text-xl font-bold font-['Poppins',sans-serif] text-white mt-0.5">
-                Download Dero Vault Desktop
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#F4A62A] font-['Poppins',sans-serif]">
+                  Windows Installation Wizard
+                </span>
+                <span className="text-slate-600 font-mono text-[10px]" aria-hidden="true">·</span>
+                <EnenDigitalLabsLogo size="sm" showText={true} showTagline={false} />
+              </div>
+              <h3 className="text-xl font-bold font-['Poppins',sans-serif] text-white mt-0.5 flex items-center gap-1">
+                <span>Install Dero Vault</span>
+                <sup className="text-[#F4A62A] text-xs font-bold leading-none">™</sup>
+                <span className="text-sm font-normal text-slate-300 ml-1.5 hidden sm:inline">
+                  — Your digital granary.
+                </span>
               </h3>
             </div>
           </div>

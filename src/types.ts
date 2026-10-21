@@ -98,6 +98,38 @@ export interface BackupSession {
   reportSummary?: string;
 }
 
+export type ReminderFrequency = 'daily' | 'weekly' | 'monthly';
+
+export interface BackupReminderSettings {
+  enabled: boolean;
+  frequency: ReminderFrequency;
+  weeklyDays: number[]; // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+  monthlyDay: number; // 1 to 31
+  time: string; // 'HH:mm', 24-hour local time, e.g. '17:00'
+  snoozeUntil: string | null; // ISO timestamp
+  lastNotifiedOccurrenceId: string | null;
+  lastDismissedOccurrenceId: string | null;
+}
+
+export interface ReminderNotificationData {
+  id: string;
+  occurrenceId: string;
+  message: string;
+  lastVerifiedBackupAt: string | null;
+  scheduledTime: string;
+  triggeredAt: string;
+}
+
+export interface ReminderStatus {
+  settings: BackupReminderSettings;
+  nextReminderAt: string | null; // ISO timestamp of next scheduled notification
+  lastVerifiedBackupAt: string | null; // ISO timestamp of most recent successful verified backup
+  isSuppressed: boolean;
+  suppressionReason?: string;
+  isDue: boolean;
+  activeReminderNotification: ReminderNotificationData | null;
+}
+
 export interface AppSettings {
   autoBackup: boolean;
   startOnConnect: boolean;
@@ -108,6 +140,7 @@ export interface AppSettings {
   preserveVersions: boolean;
   testMode: boolean;
   logLevel: 'info' | 'debug';
+  reminders?: BackupReminderSettings;
 }
 
 export interface AppLogEntry {

@@ -25,7 +25,7 @@ import {
   Shield,
 } from 'lucide-react';
 import { AppSettings, BackupProfile, BackupSession, RemovableDrive } from '../types';
-import { DeroGranaryEmblem, DeroWordmark } from './BrandLogo';
+import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo } from './BrandLogo';
 
 interface DashboardProps {
   currentSession: BackupSession | null;
@@ -127,21 +127,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* 1. COMPACT BRAND & LIVE SYSTEM STATE HEADER */}
       <header className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-3">
-          <DeroGranaryEmblem size={34} className="shrink-0" />
+          <DeroGranaryEmblem size={36} className="shrink-0" />
           <div className="flex flex-col">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-['Poppins',sans-serif] font-black text-white text-base tracking-tight leading-none">
                 DERO
               </span>
               <span className="text-[10px] font-bold text-[#F4A62A] tracking-[0.25em] leading-none">
                 VAULT
               </span>
-              <span className="text-slate-600 font-mono" aria-hidden="true">|</span>
-              <span className="text-xs text-slate-300 font-medium">Your digital granary</span>
+              <sup className="text-[#F4A62A] text-[9px] font-bold leading-none -ml-1">™</sup>
+              <span className="text-slate-600 font-mono text-xs" aria-hidden="true">|</span>
+              <span className="text-xs text-slate-300 font-medium">Your digital granary.</span>
+              <span className="text-slate-600 font-mono text-xs hidden md:inline" aria-hidden="true">·</span>
+              <span className="text-[11px] text-slate-400 font-['Inter',sans-serif] hidden md:inline">
+                Plug in. Back up. Get on with your work.
+              </span>
             </div>
-            <span className="text-[11px] text-slate-400 font-['Inter',sans-serif]">
-              Plug in. Back up. Get on with your work.
-            </span>
+            <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-400">
+              <span>A product of</span>
+              <EnenDigitalLabsLogo size="sm" showText={true} showTagline={false} />
+            </div>
           </div>
         </div>
 

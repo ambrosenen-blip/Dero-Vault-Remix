@@ -6,7 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { AppLogEntry, AppSettings, BackupProfile, BackupSession, RemovableDrive } from '../types.js';
+import { AppLogEntry, AppSettings, BackupProfile, BackupReminderSettings, BackupSession, RemovableDrive } from '../types.js';
 import { PlatformService } from '../platform/index.js';
 
 interface DatabaseSchema {
@@ -18,6 +18,17 @@ interface DatabaseSchema {
   logs: AppLogEntry[];
 }
 
+export const DEFAULT_REMINDER_SETTINGS: BackupReminderSettings = {
+  enabled: true,
+  frequency: 'weekly',
+  weeklyDays: [5], // Friday by default
+  monthlyDay: 1, // 1st of month by default
+  time: '17:00', // 5:00 PM local time
+  snoozeUntil: null,
+  lastNotifiedOccurrenceId: null,
+  lastDismissedOccurrenceId: null,
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   autoBackup: true,
   startOnConnect: true,
@@ -28,6 +39,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   preserveVersions: true,
   testMode: false,
   logLevel: 'info',
+  reminders: DEFAULT_REMINDER_SETTINGS,
 };
 
 export class LocalDatabase {
@@ -62,7 +74,14 @@ export class LocalDatabase {
         const parsed = JSON.parse(raw);
         return {
           version: parsed.version || 1,
-          settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
+          settings: {
+            ...DEFAULT_SETTINGS,
+            ...(parsed.settings || {}),
+            reminders: {
+              ...DEFAULT_REMINDER_SETTINGS,
+              ...(parsed.settings?.reminders || {}),
+            },
+          },
           registeredDrives: parsed.registeredDrives || {},
           backupProfiles: parsed.backupProfiles || {},
           backupHistory: parsed.backupHistory || [],
@@ -123,9 +142,37 @@ export class LocalDatabase {
 
   public updateSettings(partial: Partial<AppSettings>): AppSettings {
     this.data.settings = { ...this.data.settings, ...partial };
-    this.schedulePersist();
+    if (partial.reminders) {
+      this.data.settings.reminders = {
+        ...DEFAULT_REMINDER_SETTINGS,
+        ...(this.data.settings.reminders || {}),
+        ...partial.reminders,
+      };
+    }
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+      this.writeTimer = null;
+    }
+    this.persistSync(this.data);
     this.log('info', 'Settings', 'Updated application settings');
     return this.getSettings();
+  }
+
+  public getReminderSettings(): BackupReminderSettings {
+    return { ...DEFAULT_REMINDER_SETTINGS, ...(this.data.settings.reminders || {}) };
+  }
+
+  public updateReminderSettings(partial: Partial<BackupReminderSettings>): BackupReminderSettings {
+    const current = this.getReminderSettings();
+    const updated: BackupReminderSettings = { ...current, ...partial };
+    this.data.settings.reminders = updated;
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+      this.writeTimer = null;
+    }
+    this.persistSync(this.data);
+    this.log('info', 'Reminders', `Updated backup reminder settings (enabled: ${updated.enabled}, freq: ${updated.frequency}, time: ${updated.time})`);
+    return updated;
   }
 
   // --- Registered Drives ---
@@ -265,6 +312,15 @@ export class LocalDatabase {
 
   public getBackupSession(id: string): BackupSession | undefined {
     return this.data.backupHistory.find(s => s.id === id);
+  }
+
+  /**
+   * Source of truth for completed, verified backups.
+   * Requirement 3: Only completed sessions with verified integrity and valid completion timestamp count.
+   */
+  public getLastSuccessfulVerifiedBackup(): BackupSession | undefined {
+    if (!Array.isArray(this.data.backupHistory)) return undefined;
+    return this.data.backupHistory.find(s => s.status === 'completed' && s.isVerified === true && Boolean(s.endTime));
   }
 
   public clearHistory(): void {
