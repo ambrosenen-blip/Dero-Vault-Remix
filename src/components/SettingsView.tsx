@@ -25,7 +25,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { AppLogEntry, AppSettings, BackupReminderSettings, PlatformInfo, ReminderFrequency, ReminderStatus } from '../types';
-import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo, DeroVaultFullLogo } from './BrandLogo';
+import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo, DeroVaultFullLogo, DeroBrandBoardCard } from './BrandLogo';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -743,6 +743,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="text-[11px] text-slate-400 leading-relaxed">
               Dero Vault™ and Enen Digital Labs™ are trademarks of Enen Digital Labs. Local-first, offline-capable file protection with zero cloud dependencies.
+            </div>
+
+            <div className="pt-1">
+              <DeroBrandBoardCard />
             </div>
           </div>
 

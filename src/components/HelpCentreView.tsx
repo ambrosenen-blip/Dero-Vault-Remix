@@ -23,7 +23,7 @@ import {
   Layers,
   Sparkles,
 } from 'lucide-react';
-import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo } from './BrandLogo';
+import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo, DeroBrandBoardCard } from './BrandLogo';
 
 export const HelpCentreView: React.FC<{
   onNavigateTab?: (tab: 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings') => void;
@@ -242,6 +242,11 @@ export const HelpCentreView: React.FC<{
                   <div className="text-[10px] text-slate-400">Empowering Lives</div>
                 </div>
               </div>
+            </div>
+
+            {/* Official Brand Identity Board Display */}
+            <div className="pt-2">
+              <DeroBrandBoardCard />
             </div>
           </div>
         </div>

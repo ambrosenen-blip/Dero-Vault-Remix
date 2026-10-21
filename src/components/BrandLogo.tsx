@@ -659,3 +659,64 @@ export const CoBrandedLockup: React.FC<CoBrandedLockupProps> = ({
   );
 };
 
+export const DeroHeaderBannerImage: React.FC<{
+  className?: string;
+  height?: number | string;
+  alt?: string;
+}> = ({
+  className = '',
+  height = 56,
+  alt = 'Dero Vault — Your digital granary',
+}) => {
+  return (
+    <img
+      src="/assets/brand/dero-vault-header-banner.png"
+      alt={alt}
+      style={{ height, width: 'auto' }}
+      className={`object-contain rounded-lg select-none ${className}`}
+      loading="eager"
+    />
+  );
+};
+
+export const DeroBrandBoardCard: React.FC<{
+  className?: string;
+  onOpenFull?: () => void;
+}> = ({ className = '', onOpenFull }) => {
+  return (
+    <div className={`p-4 rounded-xl bg-[#081126] border border-[#1E3466] space-y-3 ${className}`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="font-bold text-white text-xs font-['Poppins',sans-serif]">
+            Official Brand Identity &amp; Aesthetic System
+          </h4>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Dero Vault™ brand standards, typography (Poppins &amp; Inter), and palette.
+          </p>
+        </div>
+        <span className="text-[10px] font-bold text-[#F4A62A] bg-[#F4A62A]/15 px-2 py-0.5 rounded-full border border-[#F4A62A]/30">
+          Enen Digital Labs™
+        </span>
+      </div>
+
+      <div
+        onClick={onOpenFull}
+        className="relative rounded-lg overflow-hidden border border-[#1E3466] bg-[#0D1B3D] cursor-pointer group shadow-sm"
+      >
+        <img
+          src="/assets/aistudio/Dero_Vault_Brand_Identity_Board_new_2ebb3f3f.png"
+          alt="Dero Vault Brand Identity Board"
+          className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-300"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <span className="px-3 py-1.5 rounded-lg bg-[#0D1B3D]/90 text-white text-xs font-medium border border-[#1E3466] shadow-lg">
+            Click to View Full Brand Board
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
