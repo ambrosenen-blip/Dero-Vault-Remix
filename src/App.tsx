@@ -47,6 +47,8 @@ export default function App() {
     autoBackup: true,
     startOnConnect: true,
     turboBackup: true,
+    startAtLogin: true,
+    startMinimized: true,
     notifyOnStart: true,
     notifyOnComplete: true,
     verifyBackups: true,

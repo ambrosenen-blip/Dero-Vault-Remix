@@ -138,10 +138,22 @@ export interface ReminderStatus {
   activeReminderNotification: ReminderNotificationData | null;
 }
 
+export interface StartupStatus {
+  enabled: boolean; // User preference (defaults to true)
+  isRegisteredInOS: boolean; // Actual OS registration
+  isPackaged: boolean;
+  executablePath: string;
+  openAtLogin: boolean;
+  openAsHidden: boolean;
+  statusMessage: string;
+}
+
 export interface AppSettings {
   autoBackup: boolean; // Master auto-backup switch
   startOnConnect: boolean; // Start backup automatically when registered drive is connected
   turboBackup: boolean; // Turbo backup engine with bounded parallel copying
+  startAtLogin: boolean; // Launch Dero Vault automatically at Windows login
+  startMinimized: boolean; // Start quietly in Windows System Tray without popping up a window
   notifyOnStart: boolean; // Show notification when backup begins
   notifyOnComplete: boolean; // Show notification when backup completes
   verifyBackups: boolean; // Verify file integrity after copy
@@ -165,3 +177,4 @@ export interface SystemTrayState {
   isPaused: boolean;
   statusText: string;
 }
+

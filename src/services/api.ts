@@ -13,6 +13,7 @@ import {
   ReminderStatus,
   RemovableDrive,
   SourceFolderOption,
+  StartupStatus,
 } from '../types';
 
 const getApiBaseUrl = (): string => {
@@ -130,6 +131,35 @@ export class ApiClient {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
+    });
+  }
+
+  // --- Windows Startup Registration API ---
+  public static async getStartupStatus(): Promise<StartupStatus> {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.getStartupStatus) {
+      try {
+        const res = await (window as any).electronAPI.getStartupStatus();
+        if (res) return res;
+      } catch (err) {
+        console.warn('[ApiClient] electronAPI.getStartupStatus failed, querying REST:', err);
+      }
+    }
+    return this.safeFetchJson<StartupStatus>('/api/system/startup');
+  }
+
+  public static async setStartupStatus(enabled: boolean): Promise<StartupStatus> {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.setStartupStatus) {
+      try {
+        const res = await (window as any).electronAPI.setStartupStatus(enabled);
+        if (res) return res;
+      } catch (err) {
+        console.warn('[ApiClient] electronAPI.setStartupStatus failed, querying REST:', err);
+      }
+    }
+    return this.safeFetchJson<StartupStatus>('/api/system/startup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
     });
   }
 

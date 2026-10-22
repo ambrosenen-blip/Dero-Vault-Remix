@@ -20,6 +20,7 @@ import {
   ExternalLink,
   ChevronRight,
   Check,
+  Laptop,
 } from 'lucide-react';
 import { DeroGranaryEmblem, DeroVaultFullLogo, EnenDigitalLabsLogo } from './BrandLogo';
 import { AppSettings, BackupReminderSettings, ReminderFrequency } from '../types';
@@ -44,6 +45,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
   // Local state for wizard settings setup
   const [wizardAutoBackup, setWizardAutoBackup] = useState(settings?.autoBackup ?? true);
   const [wizardTurbo, setWizardTurbo] = useState(settings?.turboBackup ?? true);
+  const [wizardStartAtLogin, setWizardStartAtLogin] = useState(settings?.startAtLogin ?? true);
   const [wizardReminderEnabled, setWizardReminderEnabled] = useState(settings?.reminders?.enabled ?? true);
   const [wizardFrequency, setWizardFrequency] = useState<ReminderFrequency>(settings?.reminders?.frequency ?? 'weekly');
   const [wizardTime, setWizardTime] = useState(settings?.reminders?.time ?? '17:00');
@@ -54,6 +56,8 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
     // Commit preferences if update handlers are present
     if (onUpdateSettings) {
       onUpdateSettings({
+        startAtLogin: wizardStartAtLogin,
+        startMinimized: true,
         autoBackup: wizardAutoBackup,
         turboBackup: wizardTurbo,
         reminders: {
@@ -220,6 +224,36 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
             </div>
 
             <div className="space-y-3 font-['Inter',sans-serif]">
+              {/* Option 0: Automatic Windows Startup */}
+              <div
+                onClick={() => setWizardStartAtLogin(!wizardStartAtLogin)}
+                className="p-3.5 rounded-xl bg-[#081126] border border-[#1E3466] hover:border-slate-500 cursor-pointer transition-all flex items-start justify-between gap-3"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-[#00A884]/15 text-[#00A884] shrink-0 mt-0.5">
+                    <Laptop className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white text-xs font-['Poppins',sans-serif] flex items-center gap-1.5">
+                      <span>Launch Automatically at Windows Startup</span>
+                      <span className="text-[10px] text-[#00A884] font-medium bg-[#00A884]/15 px-2 py-0.5 rounded-full">
+                        Recommended
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Runs quietly in your system tray upon Windows sign-in to patrol and protect drives automatically.
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                    wizardStartAtLogin ? 'bg-[#00A884] text-white' : 'border border-slate-600'
+                  }`}
+                >
+                  {wizardStartAtLogin && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </div>
+              </div>
+
               {/* Option 1: Automatic Backup on Connect */}
               <div
                 onClick={() => setWizardAutoBackup(!wizardAutoBackup)}

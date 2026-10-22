@@ -33,6 +33,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoBackup: true,
   startOnConnect: true,
   turboBackup: true,
+  startAtLogin: true, // Default to true: "Make the safe action the lazy action"
+  startMinimized: true, // Run quietly in system tray without popping up window
   notifyOnStart: true,
   notifyOnComplete: true,
   verifyBackups: true,
@@ -77,6 +79,9 @@ export class LocalDatabase {
           settings: {
             ...DEFAULT_SETTINGS,
             ...(parsed.settings || {}),
+            // Explicit migration: default missing startAtLogin to true, but respect explicit user preference
+            startAtLogin: parsed.settings?.startAtLogin !== undefined ? Boolean(parsed.settings.startAtLogin) : true,
+            startMinimized: parsed.settings?.startMinimized !== undefined ? Boolean(parsed.settings.startMinimized) : true,
             reminders: {
               ...DEFAULT_REMINDER_SETTINGS,
               ...(parsed.settings?.reminders || {}),
@@ -173,6 +178,25 @@ export class LocalDatabase {
     this.persistSync(this.data);
     this.log('info', 'Reminders', `Updated backup reminder settings (enabled: ${updated.enabled}, freq: ${updated.frequency}, time: ${updated.time})`);
     return updated;
+  }
+
+  public getStartupPreference(): boolean {
+    return this.data.settings.startAtLogin ?? true;
+  }
+
+  public setStartupPreference(enabled: boolean): boolean {
+    this.data.settings.startAtLogin = Boolean(enabled);
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+      this.writeTimer = null;
+    }
+    this.persistSync(this.data);
+    this.log(
+      'info',
+      'Startup',
+      `Automatic Windows startup preference set to ${enabled ? 'ENABLED' : 'DISABLED'}`
+    );
+    return this.data.settings.startAtLogin;
   }
 
   // --- Registered Drives ---

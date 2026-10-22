@@ -139,6 +139,131 @@ ipcMain.handle('app:quit', () => {
   app.quit();
 });
 
+// Windows Startup Registration & Query Helpers
+function getWindowsStartupStatus() {
+  const isPackaged = app.isPackaged;
+  const exePath = app.getPath('exe');
+  if (process.platform === 'win32') {
+    try {
+      const settings = app.getLoginItemSettings({
+        path: exePath,
+        args: ['--hidden'],
+      });
+      return {
+        enabled: Boolean(settings.openAtLogin),
+        status: settings.openAtLogin ? 'registered' : 'unregistered',
+        executablePath: exePath,
+        launchArgs: ['--hidden'],
+        wasOpenedAtLogin: Boolean(settings.wasOpenedAtLogin),
+        wasOpenedAsHidden: Boolean(settings.wasOpenedAsHidden),
+        isPackaged,
+      };
+    } catch (err) {
+      console.warn(`[Startup] Failed to query Windows login item settings: ${err.message}`);
+    }
+  }
+  return {
+    enabled: true,
+    status: 'registered',
+    executablePath: exePath,
+    launchArgs: ['--hidden'],
+    wasOpenedAtLogin: false,
+    wasOpenedAsHidden: false,
+    isPackaged,
+  };
+}
+
+function syncWindowsStartupRegistration(enabled = true) {
+  const isPackaged = app.isPackaged;
+  const exePath = app.getPath('exe');
+  console.log(`[Startup] [${new Date().toISOString()}] Synchronizing Windows startup registration: enabled=${enabled}, isPackaged=${isPackaged}, exePath="${exePath}"`);
+
+  if (process.platform === 'win32') {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: Boolean(enabled),
+        openAsHidden: true,
+        path: exePath,
+        args: ['--hidden'],
+      });
+      const check = app.getLoginItemSettings({
+        path: exePath,
+        args: ['--hidden'],
+      });
+      console.log(`[Startup] [${new Date().toISOString()}] Windows login item updated successfully: openAtLogin=${check.openAtLogin}`);
+      return {
+        enabled: Boolean(check.openAtLogin),
+        status: check.openAtLogin ? 'registered' : 'unregistered',
+        executablePath: exePath,
+        launchArgs: ['--hidden'],
+        isPackaged,
+      };
+    } catch (err) {
+      console.error(`[Startup] [${new Date().toISOString()}] Error updating Windows login item: ${err.message}`);
+      return {
+        enabled: false,
+        status: 'error',
+        executablePath: exePath,
+        launchArgs: ['--hidden'],
+        error: err.message,
+        isPackaged,
+      };
+    }
+  }
+
+  return {
+    enabled: Boolean(enabled),
+    status: enabled ? 'registered' : 'unregistered',
+    executablePath: exePath,
+    launchArgs: ['--hidden'],
+    isPackaged,
+  };
+}
+
+function checkIsAutoStartLaunch() {
+  const args = process.argv || [];
+  const hasHiddenFlag = args.includes('--hidden') || args.includes('--autostart') || args.includes('--minimized');
+  let openedAsHidden = false;
+  if (process.platform === 'win32') {
+    try {
+      const loginSettings = app.getLoginItemSettings();
+      openedAsHidden = Boolean(loginSettings && (loginSettings.wasOpenedAsHidden || loginSettings.wasOpenedAtLogin));
+    } catch {}
+  }
+  const isAuto = Boolean(hasHiddenFlag || openedAsHidden);
+  console.log(`[Startup] [${new Date().toISOString()}] Launch mode: isAutoStartLaunch=${isAuto} (hasHiddenFlag=${hasHiddenFlag}, openedAsHidden=${openedAsHidden}, argv=${JSON.stringify(args)})`);
+  return isAuto;
+}
+
+ipcMain.handle('system:get-startup-status', () => {
+  return getWindowsStartupStatus();
+});
+
+ipcMain.handle('system:set-startup-status', async (_event, enabled) => {
+  const res = syncWindowsStartupRegistration(enabled);
+  try {
+    const postData = JSON.stringify({ enabled: Boolean(enabled) });
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: SERVER_PORT,
+      path: '/api/system/startup',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+      timeout: 2000,
+    }, () => {});
+    req.on('error', (err) => console.warn(`[Main] /api/system/startup sync error: ${err.message}`));
+    req.write(postData);
+    req.end();
+  } catch (err) {
+    console.warn(`[Main] Failed to broadcast startup status update to backend: ${err.message}`);
+  }
+  return res;
+});
+
+
 
 
 // Check if local server is already running
@@ -795,6 +920,12 @@ function handleBackendStateChange(eventType, data) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('reminder:status', data);
     }
+  } else if (eventType === 'startup:updated' && data) {
+    console.log(`[Main] [${new Date().toISOString()}] Startup setting broadcast received: enabled=${data.enabled}`);
+    syncWindowsStartupRegistration(data.enabled);
+    if (updateTrayContextMenu) {
+      updateTrayContextMenu();
+    }
   }
 }
 
@@ -889,7 +1020,11 @@ async function ensureServerRunning() {
   console.warn(`[Main] [${new Date().toISOString()}] Server took longer than expected to report ready on port ${SERVER_PORT}.`);
 }
 
-function createWindow() {
+function createWindow(explicitShow) {
+  const isAutoStart = checkIsAutoStartLaunch();
+  const shouldShow = explicitShow !== undefined ? Boolean(explicitShow) : !isAutoStart;
+  console.log(`[Main] [${new Date().toISOString()}] Creating main window: shouldShow=${shouldShow} (isAutoStartLaunch=${isAutoStart})`);
+
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
   const icon = nativeImage.createFromPath(iconPath);
 
@@ -901,6 +1036,7 @@ function createWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 640,
+    show: shouldShow,
     title: 'Dero Vault™ — Your Digital Granary | A product of Enen Digital Labs™',
     icon: icon.isEmpty() ? undefined : icon,
     frame: false,
@@ -1456,6 +1592,34 @@ function createTray() {
         },
       },
       {
+        label: 'Start at Windows Login',
+        type: 'checkbox',
+        checked: Boolean(getWindowsStartupStatus().enabled),
+        click: (menuItem) => {
+          const newStatus = menuItem.checked;
+          console.log(`[Tray] Start at Windows Login toggled from tray: ${newStatus}`);
+          syncWindowsStartupRegistration(newStatus);
+          try {
+            const postData = JSON.stringify({ enabled: newStatus });
+            const req = http.request({
+              hostname: '127.0.0.1',
+              port: SERVER_PORT,
+              path: '/api/system/startup',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData),
+              },
+              timeout: 2000,
+            }, () => {});
+            req.on('error', () => {});
+            req.write(postData);
+            req.end();
+          } catch {}
+          updateContextMenu();
+        },
+      },
+      {
         label: 'Rescan Storage Drives',
         click: async () => {
           console.log(`[Tray] Manual rescan triggered from tray context menu.`);
@@ -1581,6 +1745,33 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
     await ensureServerRunning();
+
+    // Query persisted startup setting from local backend and synchronize with Windows
+    try {
+      const startupPref = await new Promise((resolve) => {
+        const req = http.get(`http://127.0.0.1:${SERVER_PORT}/api/system/startup`, (res) => {
+          let raw = '';
+          res.on('data', (chunk) => { raw += chunk; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(raw)); } catch { resolve(null); }
+          });
+        });
+        req.on('error', () => resolve(null));
+        req.setTimeout(1500, () => { req.destroy(); resolve(null); });
+      });
+
+      if (startupPref && typeof startupPref.enabled === 'boolean') {
+        console.log(`[Startup] Read startup preference from backend: enabled=${startupPref.enabled}`);
+        syncWindowsStartupRegistration(startupPref.enabled);
+      } else {
+        console.log(`[Startup] Defaulting to enabled=true as per product philosophy`);
+        syncWindowsStartupRegistration(true);
+      }
+    } catch (e) {
+      console.warn(`[Startup] Startup sync fallback error: ${e.message}`);
+      syncWindowsStartupRegistration(true);
+    }
+
     createWindow();
     createTray();
     subscribeToBackendEvents();

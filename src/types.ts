@@ -130,10 +130,22 @@ export interface ReminderStatus {
   activeReminderNotification: ReminderNotificationData | null;
 }
 
+export interface StartupStatus {
+  enabled: boolean; // User preference (defaults to true)
+  isRegisteredInOS: boolean; // Actual OS registration
+  isPackaged: boolean;
+  executablePath: string;
+  openAtLogin: boolean;
+  openAsHidden: boolean;
+  statusMessage: string;
+}
+
 export interface AppSettings {
   autoBackup: boolean;
   startOnConnect: boolean;
   turboBackup: boolean;
+  startAtLogin: boolean; // Launch Dero Vault automatically at Windows login
+  startMinimized: boolean; // Start quietly in Windows System Tray without popping up a window
   notifyOnStart: boolean;
   notifyOnComplete: boolean;
   verifyBackups: boolean;

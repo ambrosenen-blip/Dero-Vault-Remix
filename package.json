@@ -64,7 +64,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Dero Vault",
       "artifactName": "DeroVault-Setup.${ext}",
-      "differentialPackage": false
+      "differentialPackage": false,
+      "runAfterFinish": true
     },
     "mac": {
       "target": [

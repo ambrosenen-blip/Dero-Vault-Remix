@@ -3,7 +3,7 @@
  * Prompt Section 28 & 31
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   Shield,
@@ -24,7 +24,8 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
-import { AppLogEntry, AppSettings, BackupReminderSettings, PlatformInfo, ReminderFrequency, ReminderStatus } from '../types';
+import { AppLogEntry, AppSettings, BackupReminderSettings, PlatformInfo, ReminderFrequency, ReminderStatus, StartupStatus } from '../types';
+import { ApiClient } from '../services/api';
 import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo, DeroVaultFullLogo, DeroBrandBoardCard } from './BrandLogo';
 
 interface SettingsViewProps {
@@ -62,6 +63,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'preferences' | 'logs'>('preferences');
   const [testTriggered, setTestTriggered] = useState(false);
+  const [startupStatus, setStartupStatus] = useState<StartupStatus | null>(null);
+  const [loadingStartup, setLoadingStartup] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    ApiClient.getStartupStatus()
+      .then((status) => {
+        if (isMounted) setStartupStatus(status);
+      })
+      .catch((err) => {
+        console.warn('Failed to load startup status:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [settings.startAtLogin]);
+
+  const handleToggleStartup = async (enabled: boolean) => {
+    setLoadingStartup(true);
+    try {
+      const updated = await ApiClient.setStartupStatus(enabled);
+      setStartupStatus(updated);
+      onUpdateSettings({ startAtLogin: enabled });
+    } catch (err) {
+      console.error('Failed to update startup status:', err);
+    } finally {
+      setLoadingStartup(false);
+    }
+  };
 
   const toggle = (key: keyof AppSettings) => {
     onUpdateSettings({ [key]: !settings[key] });
@@ -285,6 +315,107 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-slate-300 font-semibold">Integrity Guarantee: </span>
               Both modes strictly enforce atomic file staging via <code className="text-[#F4A62A] font-mono">.dero_part</code> files, revision retention in <code className="text-[#F4A62A] font-mono">VERSIONS</code>, destination size validation, and cryptographic SHA-256 integrity verification. Integrity checks are never weakened.
             </div>
+          </div>
+
+          {/* Windows Automatic Startup & Background Patrol (Critical Reliability Section) */}
+          <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-5 space-y-4 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-[#1E3466]">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-[#00A884]" />
+                  <h3 className="text-sm font-bold font-['Poppins',sans-serif] text-white">
+                    Automatic Windows Startup &amp; Persistent Background Patrol
+                  </h3>
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      settings.startAtLogin ?? true
+                        ? 'bg-[#00A884]/15 text-[#00A884] border-[#00A884]/40'
+                        : 'bg-amber-500/15 text-amber-400 border-amber-500/40'
+                    }`}
+                  >
+                    {settings.startAtLogin ?? true ? 'Autostart Active' : 'Manual Launch Only'}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px]">
+                  Core Philosophy: &ldquo;Make the safe action the lazy action.&rdquo; Launches quietly into the system tray when Windows boots.
+                </p>
+              </div>
+
+              {/* Master Autostart Switch */}
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-xs font-semibold text-white">
+                  {settings.startAtLogin ?? true ? 'Enabled' : 'Disabled'}
+                </span>
+                <button
+                  type="button"
+                  disabled={loadingStartup}
+                  onClick={() => handleToggleStartup(!(settings.startAtLogin ?? true))}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                    (settings.startAtLogin ?? true) ? 'bg-[#00A884]' : 'bg-[#162852]'
+                  } ${loadingStartup ? 'opacity-50 cursor-wait' : ''}`}
+                  aria-label="Toggle Windows Startup"
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      (settings.startAtLogin ?? true) ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Explanation & Transparent Disclosure */}
+            <div className="p-3.5 rounded-lg bg-[#081126] border border-[#1E3466] text-xs space-y-2">
+              <div className="flex items-center gap-2 text-white font-semibold">
+                <ShieldCheck className="w-4 h-4 text-[#00A884]" />
+                <span>Zero-Friction Protection Every Morning</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                When you restart or turn on your computer each morning, Dero Vault starts automatically in the background and rests in your Windows Notification Area (System Tray). It continuously listens for removable media so that when you insert your backup drive, your files are protected without having to remember to launch the application.
+              </p>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1">
+                <Check className="w-3.5 h-3.5 text-[#00A884]" />
+                <span>Closing this window hides it safely to the system tray. Use &ldquo;Exit Dero Vault&rdquo; in the tray menu to quit.</span>
+              </div>
+            </div>
+
+            {/* Sub-option: Start Minimized to Tray */}
+            <div className="pt-2 flex items-center justify-between border-t border-[#1E3466]">
+              <div>
+                <div className="font-semibold text-white text-xs">Start Minimized to System Tray</div>
+                <div className="text-slate-300 text-[11px] mt-0.5">
+                  Launches quietly into the tray without popping up a large window upon Windows sign-in.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ startMinimized: !(settings.startMinimized ?? true) })}
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                  (settings.startMinimized ?? true) ? 'bg-[#00A884]' : 'bg-[#162852]'
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    (settings.startMinimized ?? true) ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Diagnostic Registration Status Banner */}
+            {startupStatus && (
+              <div className="p-2.5 rounded-lg bg-[#162852]/60 border border-[#1E3466] text-[11px] text-slate-300 flex items-center justify-between gap-3 font-mono">
+                <span className="flex items-center gap-1.5 truncate">
+                  <Terminal className="w-3.5 h-3.5 text-[#F4A62A] shrink-0" />
+                  <span className="truncate">
+                    {startupStatus.statusMessage || (startupStatus.isRegisteredInOS ? 'Windows Registry: HKCU Run registered' : 'Windows Registry: unmapped')}
+                  </span>
+                </span>
+                <span className="text-[10px] text-slate-400 shrink-0 font-sans">
+                  {startupStatus.isPackaged ? 'Packaged Mode' : 'Dev Mode (Simulated)'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Automatic Backup Section */}

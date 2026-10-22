@@ -20,6 +20,8 @@ try {
     expandWindow: () => ipcRenderer.invoke('window:expand'),
     showNotification: (opts) => ipcRenderer.invoke('tray:notify', opts),
     closeApp: () => ipcRenderer.invoke('app:quit'),
+    getStartupStatus: () => ipcRenderer.invoke('system:get-startup-status'),
+    setStartupStatus: (enabled) => ipcRenderer.invoke('system:set-startup-status', enabled),
     onWindowStateChange: (callback) => {
       const handler = (_event, state) => callback(state);
       ipcRenderer.on('window:state-changed', handler);

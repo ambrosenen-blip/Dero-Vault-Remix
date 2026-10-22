@@ -494,7 +494,29 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
       reminderScheduler.updateSettings(req.body.reminders);
     }
     broadcastEvent('settings:updated', updated);
+    if (req.body?.startAtLogin !== undefined) {
+      broadcastEvent('startup:updated', { startAtLogin: updated.startAtLogin });
+    }
     res.json(updated);
+  });
+
+  // 4b. Windows Startup Configuration API
+  app.get('/api/system/startup', (_req: Request, res: Response) => {
+    const settings = db.getSettings();
+    res.json({
+      enabled: settings.startAtLogin ?? true,
+      startMinimized: settings.startMinimized ?? true,
+    });
+  });
+
+  app.post('/api/system/startup', (req: Request, res: Response) => {
+    const { enabled } = req.body;
+    const isEnabled = enabled !== undefined ? Boolean(enabled) : true;
+    db.setStartupPreference(isEnabled);
+    const updated = db.updateSettings({ startAtLogin: isEnabled });
+    broadcastEvent('settings:updated', updated);
+    broadcastEvent('startup:updated', { startAtLogin: isEnabled });
+    res.json({ success: true, enabled: isEnabled, settings: updated });
   });
 
   // 4b. Backup Reminders API
