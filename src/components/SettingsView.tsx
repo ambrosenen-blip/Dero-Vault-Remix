@@ -44,6 +44,7 @@ import {
 } from '../types';
 import { ApiClient } from '../services/api';
 import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo, DeroVaultFullLogo, DeroBrandBoardCard } from './BrandLogo';
+import { LegalDocumentModal, LegalDocType } from './LegalDocumentModal';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -82,6 +83,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [testTriggered, setTestTriggered] = useState(false);
   const [startupStatus, setStartupStatus] = useState<StartupStatus | null>(null);
   const [loadingStartup, setLoadingStartup] = useState(false);
+  const [legalModalDoc, setLegalModalDoc] = useState<LegalDocType | null>(null);
 
   // Services & Fail-Closed Endpoints State
   const [servicesStatus, setServicesStatus] = useState<AllServicesStatus | null>(null);
@@ -1219,13 +1221,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="font-semibold text-white">End User Licence Agreement (EULA)</div>
                   <div className="text-slate-400 text-[11px] mt-0.5">Version 1.0.0 · Effective 23 Oct 2026</div>
                 </div>
-                <a 
-                  href="/legal/DERO-VAULT-EULA.md" 
-                  target="_blank"
-                  className="px-3 py-1.5 rounded-lg bg-[#162852] text-white text-[11px] font-bold border border-[#1E3466] hover:border-[#F4A62A]"
+                <button 
+                  type="button"
+                  onClick={() => setLegalModalDoc('eula')}
+                  className="px-3 py-1.5 rounded-lg bg-[#162852] text-white text-[11px] font-bold border border-[#1E3466] hover:border-[#F4A62A] hover:bg-[#1E3466] transition-colors cursor-pointer"
                 >
                   View Document
-                </a>
+                </button>
               </div>
 
               <div className="py-4 flex items-center justify-between">
@@ -1233,13 +1235,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="font-semibold text-white">Privacy Notice</div>
                   <div className="text-slate-400 text-[11px] mt-0.5">Version 1.0.0 · Effective 23 Oct 2026</div>
                 </div>
-                <a 
-                  href="/legal/DERO-VAULT-PRIVACY-NOTICE.md" 
-                  target="_blank"
-                  className="px-3 py-1.5 rounded-lg bg-[#162852] text-white text-[11px] font-bold border border-[#1E3466] hover:border-[#F4A62A]"
+                <button 
+                  type="button"
+                  onClick={() => setLegalModalDoc('privacy')}
+                  className="px-3 py-1.5 rounded-lg bg-[#162852] text-white text-[11px] font-bold border border-[#1E3466] hover:border-[#F4A62A] hover:bg-[#1E3466] transition-colors cursor-pointer"
                 >
                   View Document
-                </a>
+                </button>
               </div>
             </div>
           </div>
@@ -1387,6 +1389,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* In-App Offline Legal Document Viewer */}
+      <LegalDocumentModal
+        isOpen={Boolean(legalModalDoc)}
+        initialDoc={legalModalDoc || 'eula'}
+        onClose={() => setLegalModalDoc(null)}
+      />
     </div>
   );
 };

@@ -4,7 +4,7 @@
  * and exposes native Windows folder picker dialogs.
  */
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, Notification, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const { fork } = require('child_process');
@@ -1051,6 +1051,18 @@ function createWindow(explicitShow) {
   });
 
   mainWindow.setMenuBarVisibility(false);
+
+  // Prevent blank windows: open external links in system browser and deny internal popups
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:')) {
+      try {
+        shell.openExternal(url);
+      } catch (err) {
+        console.warn(`[Main] Failed to open external URL: ${url}`, err);
+      }
+    }
+    return { action: 'deny' };
+  });
 
   mainWindow.on('maximize', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {

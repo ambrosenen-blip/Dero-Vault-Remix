@@ -77,48 +77,108 @@ export class LocalDatabase {
     this.data = this.loadDatabase();
   }
 
+  private checkInstallerConsent(settings: AppSettings): boolean {
+    const candidatePaths = [
+      path.join(this.dataDir, 'installer-consent.json'),
+      path.join(path.dirname(this.dataDir), 'installer-consent.json'),
+      path.join(process.cwd(), 'installer-consent.json'),
+      ...(process.env.APPDATA ? [
+        path.join(process.env.APPDATA, 'DeroVault', 'data', 'installer-consent.json'),
+        path.join(process.env.APPDATA, 'DeroVault', 'installer-consent.json'),
+      ] : []),
+    ];
+
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          const raw = fs.readFileSync(p, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.eulaAccepted || parsed.source === 'nsis-installer')) {
+            let modified = false;
+            if (!settings.legalAcceptance.eulaAcceptedAt) {
+              settings.legalAcceptance.eulaVersion = parsed.eulaVersion || '1.0.0';
+              settings.legalAcceptance.eulaAcceptedAt = parsed.eulaAcceptedAt || new Date().toISOString();
+              modified = true;
+            }
+            if (!settings.legalAcceptance.privacyNoticeViewedAt) {
+              settings.legalAcceptance.privacyNoticeVersion = parsed.privacyNoticeVersion || '1.0.0';
+              settings.legalAcceptance.privacyNoticeViewedAt = parsed.privacyNoticeAcknowledgedAt || new Date().toISOString();
+              modified = true;
+            }
+            if (parsed.stabilityConsent !== undefined) {
+              settings.stabilityConsent = Boolean(parsed.stabilityConsent);
+              modified = true;
+            }
+            if (parsed.adoptionConsent !== undefined) {
+              settings.adoptionConsent = Boolean(parsed.adoptionConsent);
+              modified = true;
+            }
+            console.log(`[Dero Vault DB] Ingested installer consent from ${p}: EULA=${settings.legalAcceptance.eulaVersion}, stability=${settings.stabilityConsent}, adoption=${settings.adoptionConsent}`);
+            return modified;
+          }
+        } catch (err) {
+          console.warn(`[Dero Vault DB] Error reading installer consent file ${p}:`, err);
+        }
+      }
+    }
+    return false;
+  }
+
   private loadDatabase(): DatabaseSchema {
     if (fs.existsSync(this.dbFilePath)) {
       try {
         const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        return {
-          version: parsed.version || 1,
-          settings: {
-            ...DEFAULT_SETTINGS,
-            ...(parsed.settings || {}),
-            // Explicit migration: default missing startAtLogin to true, but respect explicit user preference
-            startAtLogin: parsed.settings?.startAtLogin !== undefined ? Boolean(parsed.settings.startAtLogin) : true,
-            startMinimized: parsed.settings?.startMinimized !== undefined ? Boolean(parsed.settings.startMinimized) : true,
-            // Migration: legacy telemetryConsent splits into stability and adoption
-            stabilityConsent: parsed.settings?.stabilityConsent !== undefined 
-              ? Boolean(parsed.settings.stabilityConsent) 
-              : (parsed.settings?.telemetryConsent !== undefined ? Boolean(parsed.settings.telemetryConsent) : false),
-            adoptionConsent: parsed.settings?.adoptionConsent !== undefined 
-              ? Boolean(parsed.settings.adoptionConsent) 
-              : (parsed.settings?.telemetryConsent !== undefined ? Boolean(parsed.settings.telemetryConsent) : false),
-            legalAcceptance: {
-              ...DEFAULT_SETTINGS.legalAcceptance,
-              ...(parsed.settings?.legalAcceptance || {}),
-            },
-            reminders: {
-              ...DEFAULT_REMINDER_SETTINGS,
-              ...(parsed.settings?.reminders || {}),
-            },
+        const loadedSettings: AppSettings = {
+          ...DEFAULT_SETTINGS,
+          ...(parsed.settings || {}),
+          // Explicit migration: default missing startAtLogin to true, but respect explicit user preference
+          startAtLogin: parsed.settings?.startAtLogin !== undefined ? Boolean(parsed.settings.startAtLogin) : true,
+          startMinimized: parsed.settings?.startMinimized !== undefined ? Boolean(parsed.settings.startMinimized) : true,
+          // Migration: legacy telemetryConsent splits into stability and adoption
+          stabilityConsent: parsed.settings?.stabilityConsent !== undefined 
+            ? Boolean(parsed.settings.stabilityConsent) 
+            : (parsed.settings?.telemetryConsent !== undefined ? Boolean(parsed.settings.telemetryConsent) : false),
+          adoptionConsent: parsed.settings?.adoptionConsent !== undefined 
+            ? Boolean(parsed.settings.adoptionConsent) 
+            : (parsed.settings?.telemetryConsent !== undefined ? Boolean(parsed.settings.telemetryConsent) : false),
+          legalAcceptance: {
+            ...DEFAULT_SETTINGS.legalAcceptance,
+            ...(parsed.settings?.legalAcceptance || {}),
           },
+          reminders: {
+            ...DEFAULT_REMINDER_SETTINGS,
+            ...(parsed.settings?.reminders || {}),
+          },
+        };
+
+        const consentIngested = this.checkInstallerConsent(loadedSettings);
+
+        const schema: DatabaseSchema = {
+          version: parsed.version || 1,
+          settings: loadedSettings,
           registeredDrives: parsed.registeredDrives || {},
           backupProfiles: parsed.backupProfiles || {},
           backupHistory: parsed.backupHistory || [],
           logs: parsed.logs || [],
         };
+
+        if (consentIngested) {
+          this.persistSync(schema);
+        }
+
+        return schema;
       } catch (err) {
         console.error('[Dero Vault DB] Corrupt or unreadable database, initializing backup and fresh store:', err);
       }
     }
 
+    const initialSettings: AppSettings = { ...DEFAULT_SETTINGS };
+    this.checkInstallerConsent(initialSettings);
+
     const initial: DatabaseSchema = {
       version: 1,
-      settings: DEFAULT_SETTINGS,
+      settings: initialSettings,
       registeredDrives: {},
       backupProfiles: {},
       backupHistory: [],

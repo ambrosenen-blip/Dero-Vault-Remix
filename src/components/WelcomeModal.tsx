@@ -44,11 +44,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
   const EULA_VERSION = '1.0.0';
   const PRIVACY_VERSION = '1.0.0';
 
-  const needsLegalAcceptance = !settings?.legalAcceptance?.eulaAcceptedAt;
-  const [currentStep, setCurrentStep] = useState<0 | 1 | 2 | 3>(needsLegalAcceptance ? 0 : 1);
-  const [eulaAccepted, setEulaAccepted] = useState(false);
-  const [wizardStability, setWizardStability] = useState(false);
-  const [wizardAdoption, setWizardAdoption] = useState(false);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
   // Local state for wizard settings setup
   const [wizardAutoBackup, setWizardAutoBackup] = useState(settings?.autoBackup ?? true);
@@ -68,13 +64,11 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
         startMinimized: true,
         autoBackup: wizardAutoBackup,
         turboBackup: wizardTurbo,
-        stabilityConsent: wizardStability,
-        adoptionConsent: wizardAdoption,
         legalAcceptance: {
-          eulaVersion: EULA_VERSION,
-          eulaAcceptedAt: new Date().toISOString(),
-          privacyNoticeVersion: PRIVACY_VERSION,
-          privacyNoticeViewedAt: new Date().toISOString(),
+          eulaVersion: settings?.legalAcceptance?.eulaVersion || EULA_VERSION,
+          eulaAcceptedAt: settings?.legalAcceptance?.eulaAcceptedAt || new Date().toISOString(),
+          privacyNoticeVersion: settings?.legalAcceptance?.privacyNoticeVersion || PRIVACY_VERSION,
+          privacyNoticeViewedAt: settings?.legalAcceptance?.privacyNoticeViewedAt || new Date().toISOString(),
         },
         reminders: {
           ...(settings?.reminders || {
@@ -93,11 +87,11 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
         },
       });
 
-      // Record specifically via API too to be safe
-      ApiClient.recordLegalAcceptance('eula', EULA_VERSION);
-      ApiClient.recordLegalAcceptance('privacy', PRIVACY_VERSION);
-      ApiClient.setStabilityConsent(wizardStability);
-      ApiClient.setAdoptionConsent(wizardAdoption);
+      // Ensure local legal acceptance record exists
+      if (!settings?.legalAcceptance?.eulaAcceptedAt) {
+        ApiClient.recordLegalAcceptance('eula', EULA_VERSION);
+        ApiClient.recordLegalAcceptance('privacy', PRIVACY_VERSION);
+      }
     }
 
     if (onUpdateReminderSettings) {
@@ -129,7 +123,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
           <div className="flex items-center gap-1.5 text-xs text-slate-400">
             <span className="font-medium text-slate-300">Step {currentStep} of 3</span>
             <div className="flex items-center gap-1 ml-1.5">
-              {[0, 1, 2, 3].map((step) => (
+              {[1, 2, 3].map((step) => (
                 <div
                   key={step}
                   className={`h-1.5 rounded-full transition-all ${
@@ -144,118 +138,6 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
             </div>
           </div>
         </div>
-
-        {/* STEP 0: LEGAL ACCEPTANCE */}
-        {currentStep === 0 && (
-          <div className="relative z-10 space-y-6">
-            <div className="text-center">
-              <ShieldCheck className="w-12 h-12 text-[#F4A62A] mx-auto mb-3" />
-              <h3 className="text-xl font-bold font-['Poppins',sans-serif] text-white">
-                Legal Agreements
-              </h3>
-              <p className="text-xs text-slate-300 mt-1">
-                Please review and accept our terms to begin using Dero Vault™.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-[#081126] border border-[#1E3466] space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-white">End User Licence Agreement</span>
-                  <span className="text-slate-400">v1.0.0</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  The EULA governs your use of the Software, including license grants, restrictions, and limitations of liability under Ugandan law.
-                </p>
-                <a 
-                  href="/legal/DERO-VAULT-EULA.md" 
-                  target="_blank"
-                  className="inline-flex items-center gap-1.5 text-[#F4A62A] text-[11px] font-bold hover:underline"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  Read EULA
-                </a>
-              </div>
-
-              <div className="p-4 rounded-xl bg-[#081126] border border-[#1E3466] space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-white">Privacy Notice</span>
-                  <span className="text-slate-400">v1.0.0</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Our Privacy Notice describes how we process your data locally and what anonymous information is shared if you opt-in to diagnostics.
-                </p>
-                <a 
-                  href="/legal/DERO-VAULT-PRIVACY-NOTICE.md" 
-                  target="_blank"
-                  className="inline-flex items-center gap-1.5 text-[#F4A62A] text-[11px] font-bold hover:underline"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  Read Privacy Notice
-                </a>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <label 
-                className="flex items-start gap-3 p-3.5 rounded-xl bg-[#162852]/40 border border-[#1E3466] hover:border-slate-500 cursor-pointer transition-all group"
-                onClick={() => setEulaAccepted(!eulaAccepted)}
-              >
-                <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${eulaAccepted ? 'bg-[#00A884] border-[#00A884]' : 'border-slate-500 bg-transparent group-hover:border-slate-400'}`}>
-                  {eulaAccepted && <Check className="w-3.5 h-3.5 text-white stroke-[3]" />}
-                </div>
-                <span className="text-[11px] text-slate-300 leading-relaxed">
-                  I have read and I accept the <strong className="text-white">End User Licence Agreement</strong> and acknowledge the <strong className="text-white">Privacy Notice</strong>.
-                </span>
-              </label>
-            </div>
-
-            <div className="space-y-3 pt-2 border-t border-[#1E3466]/50">
-              <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Optional (Privacy-by-Design)</div>
-              
-              <label 
-                className="flex items-start gap-3 p-3 rounded-xl bg-[#081126]/60 border border-[#1E3466] hover:border-slate-500 cursor-pointer transition-all group"
-                onClick={() => setWizardStability(!wizardStability)}
-              >
-                <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${wizardStability ? 'bg-[#00A884] border-[#00A884]' : 'border-slate-600 bg-transparent group-hover:border-slate-500'}`}>
-                  {wizardStability && <Check className="w-3.5 h-3.5 text-white stroke-[3]" />}
-                </div>
-                <div className="space-y-0.5">
-                  <div className="text-[11px] font-semibold text-white">Enable Anonymous Stability Reporting</div>
-                  <div className="text-[10px] text-slate-400 leading-relaxed">Reports crashes and performance anomalies with redacted local paths.</div>
-                </div>
-              </label>
-
-              <label 
-                className="flex items-start gap-3 p-3 rounded-xl bg-[#081126]/60 border border-[#1E3466] hover:border-slate-500 cursor-pointer transition-all group"
-                onClick={() => setWizardAdoption(!wizardAdoption)}
-              >
-                <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${wizardAdoption ? 'bg-[#00A884] border-[#00A884]' : 'border-slate-600 bg-transparent group-hover:border-slate-500'}`}>
-                  {wizardAdoption && <Check className="w-3.5 h-3.5 text-white stroke-[3]" />}
-                </div>
-                <div className="space-y-0.5">
-                  <div className="text-[11px] font-semibold text-white">Enable Anonymous Adoption Metrics</div>
-                  <div className="text-[10px] text-slate-400 leading-relaxed">Sends an anonymous heartbeat to help us estimate installation growth.</div>
-                </div>
-              </label>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                disabled={!eulaAccepted}
-                onClick={() => setCurrentStep(1)}
-                className={`py-2.5 px-6 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 font-['Poppins',sans-serif] ${
-                  eulaAccepted 
-                    ? 'text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] shadow-md shadow-[#F4A62A]/20' 
-                    : 'text-slate-500 bg-[#1E3466] cursor-not-allowed opacity-50'
-                }`}
-              >
-                <span>Accept &amp; Continue</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* STEP 1: WELCOME TO DERO VAULT™ & ENEN DIGITAL LABS™ */}
         {currentStep === 1 && (

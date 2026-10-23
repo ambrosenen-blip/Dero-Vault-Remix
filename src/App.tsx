@@ -174,14 +174,12 @@ export default function App() {
   useEffect(() => {
     if (!settingsLoaded) return;
 
-    // Check first-launch experience & legal acceptance
+    // First-launch welcome experience: show onboarding wizard once to configure backup preferences
     const hasSeenWelcome = localStorage.getItem('dero_vault_welcome_shown');
-    const hasAcceptedEula = settings.legalAcceptance?.eulaAcceptedAt;
-
-    if (!hasSeenWelcome || !hasAcceptedEula) {
+    if (!hasSeenWelcome) {
       setIsWelcomeOpen(true);
     }
-  }, [settingsLoaded, settings.legalAcceptance?.eulaAcceptedAt]);
+  }, [settingsLoaded]);
 
   useEffect(() => {
     const cleanups: (() => void)[] = [];

@@ -61,6 +61,7 @@
     "nsis": {
       "oneClick": false,
       "license": "windows/assets/license.rtf",
+      "include": "windows/installer.nsh",
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
