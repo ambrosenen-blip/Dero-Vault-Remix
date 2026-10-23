@@ -79,7 +79,7 @@ TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ENEN DIGITAL LABS SHALL NOT B
 Enen Digital Labs may terminate this licence if you fail to comply with its terms. Upon termination, you must cease all use of the Software and destroy all copies in your possession.
 
 14. CONTACT INFORMATION
-For legal notices or inquiries:
+For legal notices or inquiries: +256789856805
 - Publisher: Enen Digital Labs Co. Ltd
 - Location: Kampala, Uganda
 - Brand: Dero Vault™ — Your Digital Granary
@@ -149,7 +149,7 @@ You have the right to access, rectify, or request the deletion of any personal d
 8. CONTACT INFORMATION
 For privacy-related inquiries:
 - Publisher: Enen Digital Labs Co. Ltd
-- Location: Kampala, Uganda
+- Location: Lira, Uganda Contact +256789856805
 - Brand: Dero Vault™ — Your Digital Granary
 
 © 2026 Enen Digital Labs Co. Ltd. All rights reserved.`;

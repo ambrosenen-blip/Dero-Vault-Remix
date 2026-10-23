@@ -7,13 +7,15 @@
 !include LogicLib.nsh
 !include nsDialogs.nsh
 
+!ifndef BUILD_UNINSTALLER
+
 Var PrivacyConsentDialog
 Var StabilityConsentCheckbox
 Var AdoptionConsentCheckbox
 Var StabilityConsentValue
 Var AdoptionConsentValue
 
-!macro customHeader
+!macro customPageAfterChangeDir
   Page custom PrivacyConsentPageCreate PrivacyConsentPageLeave
 !macroend
 
@@ -58,7 +60,10 @@ Function PrivacyConsentPageLeave
   ${NSD_GetState} $AdoptionConsentCheckbox $AdoptionConsentValue
 FunctionEnd
 
+!endif
+
 !macro customInstall
+  !ifndef BUILD_UNINSTALLER
   ; Create Application Data directories
   CreateDirectory "$APPDATA\DeroVault"
   CreateDirectory "$APPDATA\DeroVault\data"
@@ -98,4 +103,5 @@ FunctionEnd
   ${Else}
     WriteRegDWORD HKCU "Software\DeroVault" "AdoptionConsent" 0
   ${EndIf}
+  !endif
 !macroend
