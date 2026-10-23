@@ -17,7 +17,10 @@ import { LocalDatabase } from './server/services/localDb.js';
 import { DriveDetector } from './server/services/driveDetector.js';
 import { BackupEngine } from './server/services/backupEngine.js';
 import { ReminderScheduler } from './server/services/reminderScheduler.js';
-import { RemovableDrive } from './server/types.js';
+import { UpdateManager } from './server/services/updateManager.js';
+import { StabilityReporter } from './server/services/stabilityReporter.js';
+import { GlobalAdoptionMonitor } from './server/services/adoptionMonitor.js';
+import { RemovableDrive, AllServicesStatus } from './server/types.js';
 import { PlatformService } from './server/platform/index.js';
 
 const execAsync = promisify(exec);
@@ -60,6 +63,9 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
   const db = new LocalDatabase();
   const driveDetector = new DriveDetector(db);
   const backupEngine = new BackupEngine(db);
+  const updateManager = new UpdateManager('1.0.0');
+  const stabilityReporter = new StabilityReporter(db);
+  const adoptionMonitor = new GlobalAdoptionMonitor(db);
 
   // SSE (Server-Sent Events) clients
   const sseClients = new Set<Response>();
@@ -548,6 +554,75 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
   app.post('/api/reminders/test', (_req: Request, res: Response) => {
     const updatedStatus = reminderScheduler.triggerTestReminder();
     res.json(updatedStatus);
+  });
+
+  // 4c. UpdateManager, StabilityReporter & GlobalAdoptionMonitor APIs (Strictly Fail-Closed)
+  app.get('/api/system/services-status', (_req: Request, res: Response) => {
+    const settings = db.getSettings();
+    const status: AllServicesStatus = {
+      updateManager: updateManager.getStatus(),
+      stabilityReporter: stabilityReporter.getStatus(),
+      adoptionMonitor: adoptionMonitor.getStatus(),
+      stabilityConsent: settings.stabilityConsent,
+      adoptionConsent: settings.adoptionConsent,
+      legalAcceptance: settings.legalAcceptance,
+    };
+    res.json(status);
+  });
+
+  app.post('/api/updates/check', async (req: Request, res: Response) => {
+    const force = Boolean(req.body?.force);
+    const result = await updateManager.checkForUpdates(force);
+    broadcastEvent('updates:status', updateManager.getStatus());
+    res.json(result);
+  });
+
+  app.post('/api/stability/flush', async (_req: Request, res: Response) => {
+    const result = await stabilityReporter.flush();
+    broadcastEvent('stability:status', stabilityReporter.getStatus());
+    res.json(result);
+  });
+
+  app.post('/api/adoption/heartbeat', async (_req: Request, res: Response) => {
+    const result = await adoptionMonitor.sendHeartbeat();
+    broadcastEvent('adoption:status', adoptionMonitor.getStatus());
+    res.json(result);
+  });
+
+  app.post('/api/settings/stability-consent', (req: Request, res: Response) => {
+    const enabled = Boolean(req.body?.enabled);
+    db.setStabilityConsent(enabled);
+    const updated = db.updateSettings({ stabilityConsent: enabled });
+    broadcastEvent('settings:updated', updated);
+    res.json({
+      success: true,
+      stabilityConsent: enabled,
+      stabilityReporter: stabilityReporter.getStatus(),
+    });
+  });
+
+  app.post('/api/settings/adoption-consent', (req: Request, res: Response) => {
+    const enabled = Boolean(req.body?.enabled);
+    db.setAdoptionConsent(enabled);
+    const updated = db.updateSettings({ adoptionConsent: enabled });
+    broadcastEvent('settings:updated', updated);
+    res.json({
+      success: true,
+      adoptionConsent: enabled,
+      adoptionMonitor: adoptionMonitor.getStatus(),
+    });
+  });
+
+  app.post('/api/settings/legal-acceptance', (req: Request, res: Response) => {
+    const { type, version } = req.body;
+    if (type !== 'eula' && type !== 'privacy') {
+      return res.status(400).json({ error: 'Invalid document type' });
+    }
+    if (!version) {
+      return res.status(400).json({ error: 'Version is required' });
+    }
+    db.recordLegalAcceptance(type, version);
+    res.json({ success: true, legalAcceptance: db.getSettings().legalAcceptance });
   });
 
   // 5. Logs & Artifacts

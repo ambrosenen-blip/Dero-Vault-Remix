@@ -161,6 +161,72 @@ export interface AppSettings {
   testMode: boolean; // Enable testing lab & virtual drives
   logLevel: 'info' | 'debug';
   reminders?: BackupReminderSettings;
+  stabilityConsent: boolean; // Opt-in stability reporting (defaults to false)
+  adoptionConsent: boolean; // Opt-in adoption analytics (defaults to false)
+  legalAcceptance: LegalAcceptance;
+}
+
+export interface LegalAcceptance {
+  eulaVersion: string | null;
+  eulaAcceptedAt: string | null;
+  privacyNoticeVersion: string | null;
+  privacyNoticeViewedAt: string | null;
+}
+
+export type ServiceConfigState = 'UNCONFIGURED' | 'INVALID_CONFIGURATION' | 'READY';
+
+export interface UpdateManifest {
+  version: string;
+  releaseDate: string;
+  releaseNotes: string;
+  downloadUrl: string;
+  sha256: string;
+  minimumOsVersion?: string;
+}
+
+export interface UpdateManagerStatus {
+  state: ServiceConfigState;
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  lastCheckedAt: string | null;
+  statusMessage: string;
+  channel: 'stable' | 'beta';
+  downloadUrl?: string;
+  releaseNotes?: string;
+  sha256?: string;
+  isChecking: boolean;
+  endpointUrl: string | null;
+}
+
+export interface StabilityReporterStatus {
+  state: ServiceConfigState;
+  telemetryConsent: boolean;
+  queueLength: number;
+  maxQueueLength: number;
+  lastReportedAt: string | null;
+  totalReported: number;
+  statusMessage: string;
+  endpointUrl: string | null;
+}
+
+export interface AdoptionMonitorStatus {
+  state: ServiceConfigState;
+  telemetryConsent: boolean;
+  installationId: string;
+  lastHeartbeatAt: string | null;
+  totalHeartbeatsSent: number;
+  statusMessage: string;
+  endpointUrl: string | null;
+}
+
+export interface AllServicesStatus {
+  updateManager: UpdateManagerStatus;
+  stabilityReporter: StabilityReporterStatus;
+  adoptionMonitor: AdoptionMonitorStatus;
+  stabilityConsent: boolean;
+  adoptionConsent: boolean;
+  legalAcceptance: LegalAcceptance;
 }
 
 export interface AppLogEntry {

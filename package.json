@@ -42,6 +42,7 @@
       "dist/**/*",
       "dist-server/**/*",
       "windows/**/*",
+      "legal/**/*",
       "package.json"
     ],
     "win": {
@@ -59,6 +60,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "license": "windows/assets/license.rtf",
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,

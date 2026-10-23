@@ -23,8 +23,25 @@ import {
   Info,
   RotateCcw,
   Sparkles,
+  Globe,
+  Radio,
+  Activity,
+  CloudOff,
+  Lock,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
-import { AppLogEntry, AppSettings, BackupReminderSettings, PlatformInfo, ReminderFrequency, ReminderStatus, StartupStatus } from '../types';
+import {
+  AppLogEntry,
+  AppSettings,
+  BackupReminderSettings,
+  PlatformInfo,
+  ReminderFrequency,
+  ReminderStatus,
+  StartupStatus,
+  AllServicesStatus,
+  ServiceConfigState,
+} from '../types';
 import { ApiClient } from '../services/api';
 import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo, DeroVaultFullLogo, DeroBrandBoardCard } from './BrandLogo';
 
@@ -61,10 +78,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onTriggerTestReminder,
   onOpenWelcomeModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'preferences' | 'logs'>('preferences');
+  const [activeTab, setActiveTab] = useState<'preferences' | 'services' | 'logs' | 'legal'>('preferences');
   const [testTriggered, setTestTriggered] = useState(false);
   const [startupStatus, setStartupStatus] = useState<StartupStatus | null>(null);
   const [loadingStartup, setLoadingStartup] = useState(false);
+
+  // Services & Fail-Closed Endpoints State
+  const [servicesStatus, setServicesStatus] = useState<AllServicesStatus | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [flushingDiagnostics, setFlushingDiagnostics] = useState(false);
+  const [sendingHeartbeat, setSendingHeartbeat] = useState(false);
+  const [actionBanner, setActionBanner] = useState<{ message: string; type: 'info' | 'warning' | 'error' | 'success' } | null>(null);
+
+  const fetchServicesStatus = () => {
+    ApiClient.getServicesStatus()
+      .then((status) => setServicesStatus(status))
+      .catch((err) => console.warn('Failed to load services status:', err));
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -80,6 +110,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     };
   }, [settings.startAtLogin]);
 
+  useEffect(() => {
+    fetchServicesStatus();
+  }, [settings.stabilityConsent, settings.adoptionConsent]);
+
   const handleToggleStartup = async (enabled: boolean) => {
     setLoadingStartup(true);
     try {
@@ -90,6 +124,98 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       console.error('Failed to update startup status:', err);
     } finally {
       setLoadingStartup(false);
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    setCheckingUpdates(true);
+    setActionBanner(null);
+    try {
+      const res = await ApiClient.checkForUpdates(true);
+      fetchServicesStatus();
+      setActionBanner({
+        message: res.message,
+        type: res.state === 'READY' ? (res.updateAvailable ? 'success' : 'info') : 'warning',
+      });
+    } catch (err: any) {
+      setActionBanner({
+        message: `Update check error: ${err.message}`,
+        type: 'error',
+      });
+    } finally {
+      setCheckingUpdates(false);
+    }
+  };
+
+  const handleFlushDiagnostics = async () => {
+    setFlushingDiagnostics(true);
+    setActionBanner(null);
+    try {
+      const res = await ApiClient.flushStabilityReports();
+      fetchServicesStatus();
+      setActionBanner({
+        message: res.message,
+        type: res.sent > 0 ? 'success' : 'info',
+      });
+    } catch (err: any) {
+      setActionBanner({
+        message: `Diagnostics error: ${err.message}`,
+        type: 'error',
+      });
+    } finally {
+      setFlushingDiagnostics(false);
+    }
+  };
+
+  const handleSendHeartbeat = async () => {
+    setSendingHeartbeat(true);
+    setActionBanner(null);
+    try {
+      const res = await ApiClient.sendAdoptionHeartbeat();
+      fetchServicesStatus();
+      setActionBanner({
+        message: res.message,
+        type: res.success ? 'success' : 'warning',
+      });
+    } catch (err: any) {
+      setActionBanner({
+        message: `Adoption monitor error: ${err.message}`,
+        type: 'error',
+      });
+    } finally {
+      setSendingHeartbeat(false);
+    }
+  };
+
+  const handleToggleStabilityConsent = async (enabled: boolean) => {
+    try {
+      await ApiClient.setStabilityConsent(enabled);
+      onUpdateSettings({ stabilityConsent: enabled });
+      fetchServicesStatus();
+      setActionBanner({
+        message: enabled
+          ? 'Stability diagnostic reporting enabled.'
+          : 'Stability diagnostic reporting disabled.',
+        type: 'info',
+      });
+    } catch (err: any) {
+      console.error('Failed to update stability consent:', err);
+    }
+  };
+
+  const handleToggleAdoptionConsent = async (enabled: boolean) => {
+    try {
+      await ApiClient.setAdoptionConsent(enabled);
+      onUpdateSettings({ adoptionConsent: enabled });
+      fetchServicesStatus();
+      setActionBanner({
+        message: enabled
+          ? 'Anonymous adoption monitoring enabled.'
+          : 'Anonymous adoption monitoring disabled.',
+        type: 'info',
+      });
+    } catch (err: any) {
+      console.error('Failed to update adoption consent:', err);
     }
   };
 
@@ -195,6 +321,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Preferences
           </button>
           <button
+            onClick={() => setActiveTab('services')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === 'services' ? 'bg-[#162852] text-[#F4A62A] font-semibold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <CloudOff className="w-3.5 h-3.5 text-slate-400" />
+            <span>Services</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('legal')}
+            className={`px-3 py-1 rounded font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === 'legal' ? 'bg-[#162852] text-[#F4A62A] font-semibold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+            <span>Legal</span>
+          </button>
+          <button
             onClick={() => setActiveTab('logs')}
             className={`px-3 py-1 rounded font-medium transition-colors ${
               activeTab === 'logs' ? 'bg-[#162852] text-[#F4A62A] font-semibold' : 'text-slate-400 hover:text-white'
@@ -204,6 +348,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {actionBanner && (
+        <div
+          className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+            actionBanner.type === 'success'
+              ? 'bg-[#00A884]/15 border-[#00A884]/40 text-[#00A884]'
+              : actionBanner.type === 'error'
+              ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+              : actionBanner.type === 'warning'
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+              : 'bg-[#162852] border-[#1E3466] text-slate-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {actionBanner.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-[#00A884]" />
+            ) : actionBanner.type === 'error' ? (
+              <XCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            ) : (
+              <Info className="w-4 h-4 shrink-0 text-[#F4A62A]" />
+            )}
+            <span>{actionBanner.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionBanner(null)}
+            className="text-slate-400 hover:text-white text-xs underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {activeTab === 'preferences' ? (
         <div className="space-y-6 text-xs font-['Inter',sans-serif]">
@@ -993,6 +1169,178 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </p>
           </div>
         </div>
+      ) : activeTab === 'legal' ? (
+        <div className="space-y-6 text-xs font-['Inter',sans-serif]">
+          {/* Legal Identity & Records */}
+          <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-5 space-y-4 shadow-sm">
+            <div className="flex items-center gap-2 pb-3 border-b border-[#1E3466]">
+              <Shield className="w-4 h-4 text-[#00A884]" />
+              <h3 className="text-sm font-bold font-['Poppins',sans-serif] text-white">
+                Legal Identity &amp; Acceptance Records
+              </h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3.5 rounded-lg bg-[#081126] border border-[#1E3466] space-y-2">
+                <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Publisher</div>
+                <div className="text-white font-semibold">Enen Digital Labs Co. Ltd</div>
+                <div className="text-slate-400 text-[11px]">Kampala, Uganda</div>
+              </div>
+              
+              <div className="p-3.5 rounded-lg bg-[#081126] border border-[#1E3466] space-y-2">
+                <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Local Acceptance State</div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-300">EULA Version:</span>
+                    <span className="text-white font-mono">{settings.legalAcceptance?.eulaVersion || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-300">Privacy Version:</span>
+                    <span className="text-white font-mono">{settings.legalAcceptance?.privacyNoticeVersion || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-lg bg-[#162852]/60 border border-[#1E3466] text-xs space-y-2">
+              <p className="text-slate-300 text-[11px] leading-relaxed italic">
+                Records of your legal acceptance are stored strictly on this device in the local application database. No personal identity information is required to maintain these records.
+              </p>
+            </div>
+          </div>
+
+          {/* Legal Documents */}
+          <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-bold font-['Poppins',sans-serif] text-white">Application Agreements</h3>
+            
+            <div className="divide-y divide-[#1E3466]">
+              <div className="py-4 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-white">End User Licence Agreement (EULA)</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">Version 1.0.0 · Effective 23 Oct 2026</div>
+                </div>
+                <a 
+                  href="/legal/DERO-VAULT-EULA.md" 
+                  target="_blank"
+                  className="px-3 py-1.5 rounded-lg bg-[#162852] text-white text-[11px] font-bold border border-[#1E3466] hover:border-[#F4A62A]"
+                >
+                  View Document
+                </a>
+              </div>
+
+              <div className="py-4 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-white">Privacy Notice</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5">Version 1.0.0 · Effective 23 Oct 2026</div>
+                </div>
+                <a 
+                  href="/legal/DERO-VAULT-PRIVACY-NOTICE.md" 
+                  target="_blank"
+                  className="px-3 py-1.5 rounded-lg bg-[#162852] text-white text-[11px] font-bold border border-[#1E3466] hover:border-[#F4A62A]"
+                >
+                  View Document
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Granular Consents */}
+          <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-bold font-['Poppins',sans-serif] text-white">Optional Data Consents</h3>
+            
+            <div className="divide-y divide-[#1E3466]">
+              <div className="py-4 flex items-center justify-between">
+                <div className="pr-8">
+                  <div className="font-semibold text-white">Stability &amp; Error Reporting</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5 leading-relaxed">
+                    Allow Dero Vault to send anonymous crash reports and performance diagnostics. No file contents or local paths are transmitted.
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleToggleStabilityConsent(!settings.stabilityConsent)}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors shrink-0 ${
+                    settings.stabilityConsent ? 'bg-[#00A884]' : 'bg-[#162852]'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      settings.stabilityConsent ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="py-4 flex items-center justify-between">
+                <div className="pr-8">
+                  <div className="font-semibold text-white">Global Adoption Monitoring</div>
+                  <div className="text-slate-400 text-[11px] mt-0.5 leading-relaxed">
+                    Allow anonymous "heartbeats" to help us estimate total active installations and storage capacity tiers.
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleToggleAdoptionConsent(!settings.adoptionConsent)}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors shrink-0 ${
+                    settings.adoptionConsent ? 'bg-[#00A884]' : 'bg-[#162852]'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      settings.adoptionConsent ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-[#081126] text-[11px] text-slate-400 leading-relaxed border border-[#1E3466]">
+              <span className="text-slate-200 font-semibold">Withdrawal: </span>
+              You may withdraw your consent at any time by disabling the toggles above. Disabling reporting will not affect your core backup functionality.
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'services' ? (
+        <div className="space-y-6 text-xs font-['Inter',sans-serif]">
+          <div className="grid grid-cols-1 gap-4">
+            {servicesStatus ? (
+              <>
+                <ServiceStatusCard
+                  title="Update Manager"
+                  icon={<RefreshCw className="w-4 h-4" />}
+                  status={servicesStatus.updateManager}
+                  actionLabel={checkingUpdates ? 'Checking...' : 'Check for Updates'}
+                  onAction={handleCheckUpdates}
+                  loading={checkingUpdates}
+                  description="Checks for new versions of Dero Vault. Updates are never downloaded or installed without your explicit approval."
+                />
+
+                <ServiceStatusCard
+                  title="Stability Reporter"
+                  icon={<Activity className="w-4 h-4" />}
+                  status={servicesStatus.stabilityReporter}
+                  actionLabel={flushingDiagnostics ? 'Flushing...' : 'Flush Queue'}
+                  onAction={handleFlushDiagnostics}
+                  loading={flushingDiagnostics}
+                  description="Reports anonymous application crashes and performance bottlenecks. Local paths and usernames are automatically redacted before transmission."
+                />
+
+                <ServiceStatusCard
+                  title="Global Adoption Monitor"
+                  icon={<Globe className="w-4 h-4" />}
+                  status={servicesStatus.adoptionMonitor}
+                  actionLabel={sendingHeartbeat ? 'Sending...' : 'Send Heartbeat'}
+                  onAction={handleSendHeartbeat}
+                  loading={sendingHeartbeat}
+                  description="Sends an anonymous heartbeat to help Enen Digital Labs™ understand global installation counts and active usage."
+                />
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 bg-[#0D1B3D] border border-[#1E3466] rounded-xl text-slate-400 gap-3">
+                <RefreshCw className="w-6 h-6 animate-spin text-[#F4A62A]" />
+                <p>Loading service connectivity status...</p>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         /* Logs Tab */
         <div className="space-y-4 text-xs font-['Inter',sans-serif]">
@@ -1039,6 +1387,153 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+interface ServiceStatusCardProps {
+  title: string;
+  icon: React.ReactNode;
+  status: any;
+  actionLabel: string;
+  onAction: () => void;
+  loading: boolean;
+  description: string;
+}
+
+const ServiceStatusCard: React.FC<ServiceStatusCardProps> = ({
+  title,
+  icon,
+  status,
+  actionLabel,
+  onAction,
+  loading,
+  description,
+}) => {
+  const isReady = status.state === 'READY';
+  const isUnconfigured = status.state === 'UNCONFIGURED';
+  const isInvalid = status.state === 'INVALID_CONFIGURATION';
+
+  return (
+    <div className="bg-[#0D1B3D] border border-[#1E3466] rounded-xl overflow-hidden flex flex-col sm:flex-row">
+      <div className="p-5 flex-1 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${isReady ? 'bg-[#00A884]/10 text-[#00A884]' : 'bg-slate-800 text-slate-400'}`}>
+              {icon}
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white font-['Poppins',sans-serif]">{title}</h4>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                    isReady
+                      ? 'bg-[#00A884]/15 text-[#00A884] border-[#00A884]/40'
+                      : isUnconfigured
+                      ? 'bg-slate-800 text-slate-400 border-slate-700'
+                      : 'bg-rose-500/15 text-rose-400 border-rose-500/40'
+                  }`}
+                >
+                  {isReady ? 'Service Ready' : isUnconfigured ? 'Unconfigured' : 'Invalid Config'}
+                </span>
+                {isReady && status.updateAvailable && (
+                  <span className="text-[10px] font-bold bg-[#F4A62A]/15 text-[#F4A62A] border border-[#F4A62A]/40 px-2 py-0.5 rounded-full">
+                    Update Available
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={onAction}
+            disabled={loading || (!isReady && title !== 'Update Manager')}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border flex items-center gap-1.5 ${
+              loading
+                ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
+                : isReady
+                ? 'bg-[#162852] text-white border-[#1E3466] hover:bg-[#1E3466] hover:border-[#F4A62A]'
+                : title === 'Update Manager'
+                ? 'bg-[#162852] text-white border-[#1E3466] hover:bg-[#1E3466]'
+                : 'bg-slate-800/50 text-slate-500 border-slate-800 cursor-not-allowed'
+            }`}
+          >
+            {loading && <RefreshCw className="w-3 h-3 animate-spin" />}
+            <span>{actionLabel}</span>
+          </button>
+        </div>
+
+        <p className="text-slate-300 text-[11px] leading-relaxed">
+          {description}
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div className="p-2.5 bg-[#081126] rounded-lg border border-[#1E3466] space-y-1">
+            <div className="text-slate-500 text-[9px] uppercase tracking-wider font-bold">Service Status</div>
+            <div className="text-[11px] text-slate-200 truncate">{status.statusMessage}</div>
+          </div>
+          <div className="p-2.5 bg-[#081126] rounded-lg border border-[#1E3466] space-y-1">
+            <div className="text-slate-500 text-[9px] uppercase tracking-wider font-bold">Endpoint Origin</div>
+            <div className="text-[11px] text-slate-400 truncate font-mono">
+              {status.endpointUrl || 'None (Inactive)'}
+            </div>
+          </div>
+        </div>
+
+        {isReady && title === 'Update Manager' && status.updateAvailable && (
+          <div className="p-3 bg-[#162852] border border-[#F4A62A]/30 rounded-lg space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Version {status.latestVersion} Available</span>
+              <a
+                href={status.downloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-bold text-[#F4A62A] hover:underline flex items-center gap-1"
+              >
+                <span>View Release Notes</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <button
+              className="w-full py-2 bg-[#F4A62A] hover:bg-[#E3951B] text-[#0D1B3D] rounded-lg text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2"
+              onClick={() => window.open(status.downloadUrl, '_blank')}
+            >
+              <Download className="w-4 h-4" />
+              <span>Download &amp; Install Update</span>
+            </button>
+          </div>
+        )}
+
+        {title === 'Stability Reporter' && status.queueLength > 0 && (
+          <div className="flex items-center justify-between px-3 py-2 bg-slate-800/40 border border-slate-700/50 rounded-lg text-[10px]">
+            <span className="text-slate-400">Queue: <strong className="text-slate-200">{status.queueLength}</strong> unsent reports</span>
+            <span className="text-slate-500 italic">Redaction active</span>
+          </div>
+        )}
+      </div>
+
+      <div className="w-full sm:w-1 bg-[#1E3466] shrink-0" />
+
+      {/* Metadata Sidebar (Context) */}
+      <div className="w-full sm:w-40 bg-[#081126]/40 p-4 flex flex-col gap-3 shrink-0">
+        <div className="space-y-1">
+          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Release</div>
+          <div className="text-xs text-white font-medium">{status.currentVersion || 'v1.0.0'}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Channel</div>
+          <div className="text-xs text-slate-300 capitalize">{status.channel || 'Stable'}</div>
+        </div>
+        {status.lastCheckedAt && (
+          <div className="space-y-1">
+            <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Last Active</div>
+            <div className="text-[10px] text-slate-400 leading-tight">
+              {new Date(status.lastCheckedAt).toLocaleDateString()}<br />
+              {new Date(status.lastCheckedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

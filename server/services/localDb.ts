@@ -42,6 +42,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   testMode: false,
   logLevel: 'info',
   reminders: DEFAULT_REMINDER_SETTINGS,
+  stabilityConsent: false, // Strict opt-in only
+  adoptionConsent: false, // Strict opt-in only
+  legalAcceptance: {
+    eulaVersion: null,
+    eulaAcceptedAt: null,
+    privacyNoticeVersion: null,
+    privacyNoticeViewedAt: null,
+  },
 };
 
 export class LocalDatabase {
@@ -82,6 +90,17 @@ export class LocalDatabase {
             // Explicit migration: default missing startAtLogin to true, but respect explicit user preference
             startAtLogin: parsed.settings?.startAtLogin !== undefined ? Boolean(parsed.settings.startAtLogin) : true,
             startMinimized: parsed.settings?.startMinimized !== undefined ? Boolean(parsed.settings.startMinimized) : true,
+            // Migration: legacy telemetryConsent splits into stability and adoption
+            stabilityConsent: parsed.settings?.stabilityConsent !== undefined 
+              ? Boolean(parsed.settings.stabilityConsent) 
+              : (parsed.settings?.telemetryConsent !== undefined ? Boolean(parsed.settings.telemetryConsent) : false),
+            adoptionConsent: parsed.settings?.adoptionConsent !== undefined 
+              ? Boolean(parsed.settings.adoptionConsent) 
+              : (parsed.settings?.telemetryConsent !== undefined ? Boolean(parsed.settings.telemetryConsent) : false),
+            legalAcceptance: {
+              ...DEFAULT_SETTINGS.legalAcceptance,
+              ...(parsed.settings?.legalAcceptance || {}),
+            },
             reminders: {
               ...DEFAULT_REMINDER_SETTINGS,
               ...(parsed.settings?.reminders || {}),
@@ -197,6 +216,41 @@ export class LocalDatabase {
       `Automatic Windows startup preference set to ${enabled ? 'ENABLED' : 'DISABLED'}`
     );
     return this.data.settings.startAtLogin;
+  }
+
+  public getStabilityConsent(): boolean {
+    return this.data.settings.stabilityConsent ?? false;
+  }
+
+  public setStabilityConsent(enabled: boolean): boolean {
+    this.data.settings.stabilityConsent = Boolean(enabled);
+    this.persistSync(this.data);
+    this.log('info', 'Telemetry', `Stability reporting consent set to ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    return this.data.settings.stabilityConsent;
+  }
+
+  public getAdoptionConsent(): boolean {
+    return this.data.settings.adoptionConsent ?? false;
+  }
+
+  public setAdoptionConsent(enabled: boolean): boolean {
+    this.data.settings.adoptionConsent = Boolean(enabled);
+    this.persistSync(this.data);
+    this.log('info', 'Telemetry', `Adoption analytics consent set to ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    return this.data.settings.adoptionConsent;
+  }
+
+  public recordLegalAcceptance(type: 'eula' | 'privacy', version: string): void {
+    const now = new Date().toISOString();
+    if (type === 'eula') {
+      this.data.settings.legalAcceptance.eulaVersion = version;
+      this.data.settings.legalAcceptance.eulaAcceptedAt = now;
+    } else {
+      this.data.settings.legalAcceptance.privacyNoticeVersion = version;
+      this.data.settings.legalAcceptance.privacyNoticeViewedAt = now;
+    }
+    this.persistSync(this.data);
+    this.log('info', 'Legal', `Accepted ${type.toUpperCase()} version ${version}`);
   }
 
   // --- Registered Drives ---

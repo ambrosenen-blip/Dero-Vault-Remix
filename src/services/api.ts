@@ -14,6 +14,13 @@ import {
   RemovableDrive,
   SourceFolderOption,
   StartupStatus,
+  AllServicesStatus,
+  UpdateManagerStatus,
+  StabilityReporterStatus,
+  AdoptionMonitorStatus,
+  ServiceConfigState,
+  UpdateManifest,
+  LegalAcceptance,
 } from '../types';
 
 const getApiBaseUrl = (): string => {
@@ -160,6 +167,79 @@ export class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
+    });
+  }
+
+  // --- UpdateManager, StabilityReporter & GlobalAdoptionMonitor APIs ---
+  public static async getServicesStatus(): Promise<AllServicesStatus> {
+    return this.safeFetchJson<AllServicesStatus>('/api/system/services-status');
+  }
+
+  public static async checkForUpdates(force = false): Promise<{
+    checked: boolean;
+    state: ServiceConfigState;
+    message: string;
+    updateAvailable: boolean;
+    manifest?: UpdateManifest;
+  }> {
+    return this.safeFetchJson('/api/updates/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    });
+  }
+
+  public static async flushStabilityReports(): Promise<{
+    sent: number;
+    remaining: number;
+    message: string;
+  }> {
+    return this.safeFetchJson('/api/stability/flush', {
+      method: 'POST',
+    });
+  }
+
+  public static async sendAdoptionHeartbeat(): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    return this.safeFetchJson('/api/adoption/heartbeat', {
+      method: 'POST',
+    });
+  }
+
+  public static async setStabilityConsent(enabled: boolean): Promise<{
+    success: boolean;
+    stabilityConsent: boolean;
+    stabilityReporter: StabilityReporterStatus;
+  }> {
+    return this.safeFetchJson('/api/settings/stability-consent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  public static async setAdoptionConsent(enabled: boolean): Promise<{
+    success: boolean;
+    adoptionConsent: boolean;
+    adoptionMonitor: AdoptionMonitorStatus;
+  }> {
+    return this.safeFetchJson('/api/settings/adoption-consent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  public static async recordLegalAcceptance(type: 'eula' | 'privacy', version: string): Promise<{
+    success: boolean;
+    legalAcceptance: LegalAcceptance;
+  }> {
+    return this.safeFetchJson('/api/settings/legal-acceptance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, version }),
     });
   }
 

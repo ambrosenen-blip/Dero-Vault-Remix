@@ -55,11 +55,20 @@ export default function App() {
     preserveVersions: true,
     testMode: false,
     logLevel: 'info',
+    stabilityConsent: false,
+    adoptionConsent: false,
+    legalAcceptance: {
+      eulaVersion: null,
+      eulaAcceptedAt: null,
+      privacyNoticeVersion: null,
+      privacyNoticeViewedAt: null,
+    },
   });
   const [availableSources, setAvailableSources] = useState<SourceFolderOption[]>([]);
   const [logs, setLogs] = useState<AppLogEntry[]>([]);
   const [logFilePath, setLogFilePath] = useState<string>('.dero_vault/logs/dero_vault.log');
   const [platformInfo, setPlatformInfo] = useState<PlatformInfo | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Modals and Drawers
   const [unregisteredModalDrive, setUnregisteredModalDrive] = useState<RemovableDrive | null>(null);
@@ -148,6 +157,7 @@ export default function App() {
       );
       setLogs(logData.logs || []);
       setLogFilePath(logData.logFilePath || '.dero_vault/logs/dero_vault.log');
+      setSettingsLoaded(true);
     } catch (err) {
       if (retries > 0) {
         setTimeout(() => refreshAll(retries - 1), 600);
@@ -158,14 +168,22 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Check first-launch experience
+    refreshAll();
+  }, []);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    // Check first-launch experience & legal acceptance
     const hasSeenWelcome = localStorage.getItem('dero_vault_welcome_shown');
-    if (!hasSeenWelcome) {
+    const hasAcceptedEula = settings.legalAcceptance?.eulaAcceptedAt;
+
+    if (!hasSeenWelcome || !hasAcceptedEula) {
       setIsWelcomeOpen(true);
     }
+  }, [settingsLoaded, settings.legalAcceptance?.eulaAcceptedAt]);
 
-    refreshAll();
-
+  useEffect(() => {
     const cleanups: (() => void)[] = [];
 
     if ((window as any).electronAPI) {
