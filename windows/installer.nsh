@@ -20,8 +20,6 @@ Var AdoptionConsentValue
 !macroend
 
 Function PrivacyConsentPageCreate
-  !insertmacro MUI_HEADER_TEXT "Privacy Notice & Diagnostic Consents" "Review privacy principles and configure optional diagnostic reporting."
-
   nsDialogs::Create 1018
   Pop $PrivacyConsentDialog
 
@@ -29,23 +27,30 @@ Function PrivacyConsentPageCreate
     Abort
   ${EndIf}
 
-  ; Summary of privacy principles
-  ${NSD_CreateLabel} 0 0 100% 28u "Dero Vault operates 100% locally on your computer and removable storage.$\r$\nYour documents and backups are never uploaded to the cloud or remote servers."
+  ; Page Title and Subtitle configured directly inside nsDialogs (the supported mechanism for custom pages)
+  ${NSD_CreateLabel} 0 0 100% 12u "Privacy Notice & Diagnostic Consents"
   Pop $0
 
-  ${NSD_CreateLabel} 0 32u 100% 28u "Privacy Notice Acknowledgement:$\r$\nBy continuing installation, you acknowledge the Dero Vault Privacy Notice. Core backups require zero analytics or telemetry."
+  ${NSD_CreateLabel} 0 14u 100% 12u "Review privacy principles and configure optional diagnostic reporting."
+  Pop $0
+
+  ; Summary of privacy principles
+  ${NSD_CreateLabel} 0 30u 100% 24u "Dero Vault operates 100% locally on your computer and removable storage.$\r$\nYour documents and backups are never uploaded to the cloud or remote servers."
+  Pop $0
+
+  ${NSD_CreateLabel} 0 58u 100% 24u "Privacy Notice Acknowledgement:$\r$\nBy continuing installation, you acknowledge the Dero Vault Privacy Notice. Core backups require zero analytics or telemetry."
   Pop $0
 
   ; Section divider / explanation
-  ${NSD_CreateLabel} 0 66u 100% 14u "Optional Privacy-by-Design Settings (Unchecked / Disabled by default):"
+  ${NSD_CreateLabel} 0 86u 100% 12u "Optional Privacy-by-Design Settings (Unchecked / Disabled by default):"
   Pop $0
 
   ; Checkbox 1: Stability Reporting (Default UNCHECKED)
-  ${NSD_CreateCheckbox} 10u 84u 95% 22u "Enable Anonymous Stability Reporting$\r$\n(Transmits crash dumps with local user paths automatically redacted)"
+  ${NSD_CreateCheckbox} 10u 102u 95% 18u "Enable Anonymous Stability Reporting (sanitized crash dumps)"
   Pop $StabilityConsentCheckbox
 
   ; Checkbox 2: Adoption Metrics (Default UNCHECKED)
-  ${NSD_CreateCheckbox} 10u 112u 95% 22u "Enable Anonymous Adoption Metrics$\r$\n(Sends an anonymous periodic heartbeat to help estimate active installations)"
+  ${NSD_CreateCheckbox} 10u 124u 95% 18u "Enable Anonymous Adoption Metrics (periodic anonymous heartbeat)"
   Pop $AdoptionConsentCheckbox
 
   ; Ensure default is unchecked (OFF)
