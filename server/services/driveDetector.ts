@@ -290,10 +290,21 @@ export class DriveDetector extends EventEmitter {
         }
       }
 
+      // Check if drive contains a Dero Vault backup or recovery package
+      if (drive.mountPath) {
+        try {
+          const recoveryManifestPath = path.join(drive.mountPath, 'DERO_VAULT_BACKUP', 'RECOVERY', 'recovery-manifest.json');
+          const backupCurrentPath = path.join(drive.mountPath, 'DERO_VAULT_BACKUP', 'CURRENT');
+          if (fs.existsSync(recoveryManifestPath) || fs.existsSync(backupCurrentPath)) {
+            drive.hasRecoveryPackage = true;
+          }
+        } catch {}
+      }
+
       this.activeDrives.set(stableId, drive);
 
       if (isNewConnection) {
-        const classification = drive.isRegistered ? 'REGISTERED' : 'UNREGISTERED';
+        const classification = drive.isRegistered ? 'REGISTERED' : (drive.hasRecoveryPackage ? 'UNREGISTERED_BACKUP_DRIVE' : 'UNREGISTERED');
         console.log(`[Detector] classification: ${classification} for drive ${drive.stableHardwareId} [${drive.driveLetter}] (${drive.volumeLabel || 'Removable'})`);
         console.log(`[Detector] [${new Date().toISOString()}] State transition: DISCONNECTED -> CONNECTED for drive ${drive.stableHardwareId} [${drive.driveLetter}] (${drive.volumeLabel || 'Removable'})`);
         this.db.log(
@@ -304,6 +315,9 @@ export class DriveDetector extends EventEmitter {
         this.emit('drive:connected', drive);
 
         if (!drive.isRegistered) {
+          if (drive.hasRecoveryPackage) {
+            this.emit('drive:recovery_detected', drive);
+          }
           this.emit('drive:unregistered_detected', drive);
         }
       }

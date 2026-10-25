@@ -23,6 +23,7 @@ import {
   ExternalLink,
   Zap,
   Shield,
+  LifeBuoy,
 } from 'lucide-react';
 import { AppSettings, BackupProfile, BackupSession, RemovableDrive } from '../types';
 import { DeroGranaryEmblem, DeroWordmark, EnenDigitalLabsLogo } from './BrandLogo';
@@ -39,7 +40,7 @@ interface DashboardProps {
   onCancelBackup: () => void;
   onViewReport: (session: BackupSession) => void;
   onOpenRegisterModal: (drive: RemovableDrive) => void;
-  onNavigateTab?: (tab: 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings') => void;
+  onNavigateTab?: (tab: 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings' | 'rescue') => void;
   onOpenDownloadModal?: () => void;
 }
 
@@ -240,6 +241,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
         </div>
       </header>
+
+      {/* Rescue & Migration Discovery Banner */}
+      {activeDrives.some((d) => d.isConnected && d.hasRecoveryPackage) && (
+        <div className="bg-linear-to-r from-[#10224D] to-[#0A1530] border border-emerald-500/40 rounded-xl p-3 flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <LifeBuoy className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>Dero Vault Backup Drive Connected</span>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-mono font-semibold">
+                  {activeDrives.find((d) => d.isConnected && d.hasRecoveryPackage)?.driveLetter}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                This drive carries recoverable office files. Carry out Rescue &amp; Migration to restore your files to this computer.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigateTab && onNavigateTab('rescue')}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 shadow-xs"
+          >
+            <span>Rescue &amp; Migrate</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* 2. PRIMARY OPERATIONAL 2-COLUMN GRID (Zero Vertical Overflow) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">

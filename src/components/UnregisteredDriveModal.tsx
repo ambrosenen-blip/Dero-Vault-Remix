@@ -12,12 +12,14 @@ interface UnregisteredDriveModalProps {
   drive: RemovableDrive | null;
   onRegister: (drive: RemovableDrive) => void;
   onIgnore: () => void;
+  onOpenRescue?: (drive: RemovableDrive) => void;
 }
 
 export const UnregisteredDriveModal: React.FC<UnregisteredDriveModalProps> = ({
   drive,
   onRegister,
   onIgnore,
+  onOpenRescue,
 }) => {
   if (!drive) return null;
 
@@ -85,21 +87,41 @@ export const UnregisteredDriveModal: React.FC<UnregisteredDriveModalProps> = ({
           </div>
         </div>
 
-        <p className="text-xs text-slate-300 leading-relaxed font-['Inter',sans-serif]">
-          This drive has not been registered with Dero Vault. To protect your data, automatic backup will not begin until you register and configure what to protect.
-        </p>
+        {drive.hasRecoveryPackage ? (
+          <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-xl space-y-1">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+              <span>🌾 Dero Vault Backup Detected on this Drive</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed font-['Inter',sans-serif]">
+              This drive carries a backup created with Dero Vault. You can restore your office files to this computer or configure new backup protection.
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-300 leading-relaxed font-['Inter',sans-serif]">
+            This drive has not been registered with Dero Vault. To protect your data, automatic backup will not begin until you register and configure what to protect.
+          </p>
+        )}
 
-        {/* Buttons matching Prompt Section 8 */}
-        <div className="flex items-center justify-end gap-3 pt-2">
+        {/* Buttons */}
+        <div className="flex items-center justify-end gap-2 pt-2">
           <button
             onClick={onIgnore}
-            className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white bg-[#132247] hover:bg-[#1A2E5E] rounded-lg transition-colors border border-[#1E3466]"
+            className="px-3.5 py-2 text-xs font-medium text-slate-300 hover:text-white bg-[#132247] hover:bg-[#1A2E5E] rounded-lg transition-colors border border-[#1E3466]"
           >
             Ignore
           </button>
+          {drive.hasRecoveryPackage && onOpenRescue && (
+            <button
+              onClick={() => onOpenRescue(drive)}
+              className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-900/30 font-['Poppins',sans-serif]"
+            >
+              <span>Recover Files</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={() => onRegister(drive)}
-            className="px-5 py-2 text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-[#F4A62A]/20 font-['Poppins',sans-serif]"
+            className="px-4 py-2 text-xs font-bold text-[#0D1B3D] bg-[#F4A62A] hover:bg-[#F6B54A] rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-[#F4A62A]/20 font-['Poppins',sans-serif]"
           >
             <span>Register Drive</span>
             <ArrowRight className="w-3.5 h-3.5" />

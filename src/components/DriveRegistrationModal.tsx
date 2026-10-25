@@ -378,6 +378,14 @@ export const DriveRegistrationModal: React.FC<DriveRegistrationModalProps> = ({
                 </p>
               </div>
             </div>
+
+            <div className="pt-2 border-t border-[#1E3466]/60 flex items-center gap-2 text-[11px] text-emerald-400">
+              <Shield className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                <strong>Rescue Launcher Provisioning:</strong> A drive-resident recovery package (Rescue-Launcher.html &amp; manifest) will be provisioned onto this drive in DERO_VAULT_BACKUP/RECOVERY.
+              </span>
+            </div>
+
             {drive.freeBytes !== undefined && drive.freeBytes > 0 && drive.freeBytes < 50 * 1024 * 1024 && (
               <div className="p-2 bg-amber-950/60 border border-amber-800/60 rounded text-[11px] text-amber-300">
                 Warning: Low free space detected on {drive.driveLetter} ({formatBytes(drive.freeBytes)} free). Ensure there is sufficient room for your files.

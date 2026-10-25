@@ -4,9 +4,9 @@
  */
 
 import React from 'react';
-import { LayoutDashboard, HardDrive, FolderSync, History, Settings, Download, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FolderSync, History, Settings, Download, HelpCircle, LifeBuoy } from 'lucide-react';
 
-export type NavTab = 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings' | 'help';
+export type NavTab = 'dashboard' | 'drives' | 'profiles' | 'history' | 'settings' | 'rescue' | 'help';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -23,6 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const tabs = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'rescue' as NavTab, label: 'Rescue & Migration', icon: LifeBuoy },
     { id: 'drives' as NavTab, label: `Registered Drives (${registeredCount})`, icon: HardDrive },
     { id: 'profiles' as NavTab, label: 'Backup Profiles', icon: FolderSync },
     { id: 'history' as NavTab, label: 'Backup History', icon: History },

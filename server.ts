@@ -20,8 +20,11 @@ import { ReminderScheduler } from './server/services/reminderScheduler.js';
 import { UpdateManager } from './server/services/updateManager.js';
 import { StabilityReporter } from './server/services/stabilityReporter.js';
 import { GlobalAdoptionMonitor } from './server/services/adoptionMonitor.js';
-import { RemovableDrive, AllServicesStatus } from './server/types.js';
+import { RemovableDrive, AllServicesStatus, RecoveryPackageStatus } from './server/types.js';
 import { PlatformService } from './server/platform/index.js';
+import { RecoveryManager } from './server/services/recoveryManager.js';
+import { RestoreEngine } from './server/services/restoreEngine.js';
+import { EnvironmentDetector } from './server/services/environmentDetector.js';
 
 const execAsync = promisify(exec);
 const getModuleDir = () => {
@@ -66,6 +69,7 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
   const updateManager = new UpdateManager('1.0.0');
   const stabilityReporter = new StabilityReporter(db);
   const adoptionMonitor = new GlobalAdoptionMonitor(db);
+  const restoreEngine = new RestoreEngine(db);
 
   // SSE (Server-Sent Events) clients
   const sseClients = new Set<Response>();
@@ -170,6 +174,22 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     broadcastEvent('backup:complete', session);
   });
 
+  driveDetector.on('drive:recovery_detected', (drive: RemovableDrive) => {
+    broadcastEvent('drive:recovery_detected', drive);
+  });
+
+  restoreEngine.on('restore:start', (session) => {
+    broadcastEvent('restore:start', session);
+  });
+
+  restoreEngine.on('restore:update', (session) => {
+    broadcastEvent('restore:update', session);
+  });
+
+  restoreEngine.on('restore:complete', (session) => {
+    broadcastEvent('restore:complete', session);
+  });
+
   // Start drive monitoring in background
   driveDetector.startMonitoring(2000);
 
@@ -185,10 +205,16 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     sseClients.add(res);
     res.write(`event: handshake\ndata: ${JSON.stringify({ timestamp: new Date().toISOString() })}\n\n`);
 
-    // Immediate authoritative catch-up: Push current session state if one exists
+    // Immediate authoritative catch-up: Push current backup session state if one exists
     const currentSession = backupEngine.getCurrentSession();
     if (currentSession) {
       res.write(`event: backup:catchup\ndata: ${JSON.stringify(currentSession)}\n\n`);
+    }
+
+    // Immediate authoritative catch-up: Push current restore session state if one exists
+    const currentRestore = restoreEngine.getCurrentSession();
+    if (currentRestore) {
+      res.write(`event: restore:catchup\ndata: ${JSON.stringify(currentRestore)}\n\n`);
     }
 
     // Push current authoritative reminder status on client connect
@@ -360,8 +386,8 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     res.json({ profiles });
   });
 
-  // Register a drive
-  app.post('/api/drives/register', (req: Request, res: Response) => {
+  // Register a drive with automatic recovery launcher provisioning
+  app.post('/api/drives/register', async (req: Request, res: Response) => {
     const { stableHardwareId, friendlyName, sourceFolders, autoBackupEnabled, verifyBackups, preserveVersions } = req.body;
     const drive = driveDetector.getDriveByStableId(stableHardwareId);
 
@@ -388,8 +414,37 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     drive.registeredAt = updatedDrive.registeredAt;
     drive.backupProfileId = profile.id;
 
-    broadcastEvent('drive:registered', { drive: updatedDrive, profile });
-    res.json({ success: true, drive: updatedDrive, profile });
+    // Provision Drive-Resident Recovery Package & Launcher
+    let recoveryStatus: RecoveryPackageStatus = { isProvisioned: false, error: 'Not attempted' };
+    try {
+      recoveryStatus = await RecoveryManager.provisionRecoveryPackage(drive, profile);
+      if (recoveryStatus.isProvisioned) {
+        drive.hasRecoveryPackage = true;
+        drive.recoveryStatus = recoveryStatus;
+        updatedDrive.hasRecoveryPackage = true;
+        updatedDrive.recoveryStatus = recoveryStatus;
+        db.updateRegisteredDrive(drive.stableHardwareId, {
+          hasRecoveryPackage: true,
+          recoveryStatus,
+        });
+        db.log(
+          'success',
+          'RecoveryManager',
+          `Provisioned Rescue Launcher on drive "${updatedDrive.friendlyName}" [${drive.driveLetter}]`
+        );
+      } else {
+        db.log(
+          'warn',
+          'RecoveryManager',
+          `Recovery launcher provisioning warning on drive "${updatedDrive.friendlyName}": ${recoveryStatus.error}`
+        );
+      }
+    } catch (recErr: any) {
+      db.log('error', 'RecoveryManager', `Recovery launcher provisioning failed: ${recErr.message}`);
+    }
+
+    broadcastEvent('drive:registered', { drive: updatedDrive, profile, recoveryStatus });
+    res.json({ success: true, drive: updatedDrive, profile, recoveryStatus });
   });
 
   // Update a registered drive
@@ -470,6 +525,176 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
   app.post('/api/backup/cancel', (_req: Request, res: Response) => {
     const success = backupEngine.cancelActiveBackup();
     res.json({ success });
+  });
+
+  // --- Recovery & Migration (Rescue Engine) APIs ---
+  app.get('/api/recovery/environment', async (req: Request, res: Response) => {
+    try {
+      const mountPath = req.query.mountPath as string | undefined;
+      const result = await EnvironmentDetector.evaluateRecoveryReadiness(mountPath);
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, success: false });
+    }
+  });
+
+  app.post('/api/recovery/inspect', async (req: Request, res: Response) => {
+    try {
+      const { mountPath, stableHardwareId } = req.body;
+      let targetPath = mountPath;
+
+      if (!targetPath && stableHardwareId) {
+        const d = driveDetector.getDriveByStableId(stableHardwareId);
+        if (d) targetPath = d.mountPath;
+      }
+
+      if (!targetPath) {
+        const all = driveDetector.getActiveDrives();
+        const cand = all.find((d) => d.isConnected && d.hasRecoveryPackage) || all.find((d) => d.isConnected && !d.isSystemDrive);
+        if (cand) targetPath = cand.mountPath;
+      }
+
+      if (!targetPath) {
+        return res.status(400).json({ error: 'No mount path or connected drive specified for recovery inspection.' });
+      }
+
+      const result = await restoreEngine.inspectBackupDrive(targetPath);
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, success: false });
+    }
+  });
+
+  app.post('/api/recovery/restore/start', async (req: Request, res: Response) => {
+    try {
+      const { mountPath, driveStableId, driveLetter, namespaces, conflictStrategy, verifyIntegrity } = req.body;
+
+      let resolvedMountPath = mountPath;
+      if (!resolvedMountPath && driveStableId) {
+        const d = driveDetector.getDriveByStableId(driveStableId);
+        if (d) resolvedMountPath = d.mountPath;
+      }
+
+      if (!resolvedMountPath) {
+        return res.status(400).json({ error: 'Destination mount path is required.' });
+      }
+
+      const session = await restoreEngine.startRestore({
+        mountPath: resolvedMountPath,
+        driveStableId,
+        driveLetter,
+        namespaces,
+        conflictStrategy: conflictStrategy || 'safe_rename',
+        verifyIntegrity: verifyIntegrity ?? true,
+      });
+
+      res.json({ success: true, session });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/recovery/restore/current', (_req: Request, res: Response) => {
+    res.json({
+      session: restoreEngine.getCurrentSession(),
+      isRunning: restoreEngine.isRunning(),
+    });
+  });
+
+  app.post('/api/recovery/restore/cancel', (_req: Request, res: Response) => {
+    const success = restoreEngine.cancelActiveRestore();
+    res.json({ success });
+  });
+
+  app.post('/api/recovery/provision', async (req: Request, res: Response) => {
+    const { stableHardwareId } = req.body;
+    const drive = driveDetector.getDriveByStableId(stableHardwareId);
+    if (!drive) {
+      return res.status(404).json({ error: 'Storage device not found or currently disconnected.' });
+    }
+
+    const profile = db.getBackupProfile(stableHardwareId);
+    if (!profile) {
+      return res.status(404).json({ error: 'No backup profile found for this drive.' });
+    }
+
+    const status = await RecoveryManager.provisionRecoveryPackage(drive, profile);
+    if (status.isProvisioned) {
+      drive.hasRecoveryPackage = true;
+      drive.recoveryStatus = status;
+      db.updateRegisteredDrive(stableHardwareId, {
+        hasRecoveryPackage: true,
+        recoveryStatus: status,
+      });
+      db.log('success', 'RecoveryManager', `Re-provisioned recovery package on ${drive.driveLetter}`);
+    }
+
+    res.json({ success: status.isProvisioned, status });
+  });
+
+  // Register a migrated backup drive on the replacement computer
+  app.post('/api/recovery/register-migrated', async (req: Request, res: Response) => {
+    const { stableHardwareId, friendlyName, sourceFolders, autoBackupEnabled, verifyBackups, preserveVersions } = req.body;
+    const drive = driveDetector.getDriveByStableId(stableHardwareId);
+
+    if (!drive) {
+      return res.status(404).json({ error: 'Storage device not found or currently disconnected.' });
+    }
+
+    if (!sourceFolders || sourceFolders.length === 0) {
+      return res.status(400).json({ error: 'At least one source folder must be selected for future backup protection.' });
+    }
+
+    // Safety checks: ensure source and destination are not reversed
+    for (const sf of sourceFolders) {
+      const cleanSf = path.resolve(sf).toLowerCase();
+      const cleanDest = path.resolve(drive.mountPath).toLowerCase();
+      if (cleanSf.startsWith(cleanDest)) {
+        return res.status(400).json({
+          error: 'Invalid configuration: Source folder cannot be located on the backup destination drive.',
+        });
+      }
+    }
+
+    const { drive: updatedDrive, profile } = db.registerDrive(drive, {
+      friendlyName: friendlyName || drive.volumeLabel || 'Migrated Backup Drive',
+      sourceFolders,
+      destinationFolder: 'DERO_VAULT_BACKUP',
+      autoBackupEnabled: autoBackupEnabled ?? true,
+      verifyBackups: verifyBackups ?? true,
+      preserveVersions: preserveVersions ?? true,
+      driveStableId: drive.stableHardwareId,
+    });
+
+    drive.isRegistered = true;
+    drive.friendlyName = updatedDrive.friendlyName;
+    drive.registeredAt = updatedDrive.registeredAt;
+    drive.backupProfileId = profile.id;
+
+    // Refresh recovery package with current machine details
+    let recStatus: RecoveryPackageStatus = { isProvisioned: false, error: 'Not attempted' };
+    try {
+      recStatus = await RecoveryManager.provisionRecoveryPackage(drive, profile);
+      if (recStatus.isProvisioned) {
+        drive.hasRecoveryPackage = true;
+        drive.recoveryStatus = recStatus;
+        updatedDrive.hasRecoveryPackage = true;
+        updatedDrive.recoveryStatus = recStatus;
+        db.updateRegisteredDrive(drive.stableHardwareId, {
+          hasRecoveryPackage: true,
+          recoveryStatus: recStatus,
+        });
+      }
+    } catch {}
+
+    db.log(
+      'success',
+      'DriveRegistry',
+      `Migrated drive "${updatedDrive.friendlyName}" successfully registered on replacement computer. Existing backup data preserved.`
+    );
+
+    broadcastEvent('drive:registered', { drive: updatedDrive, profile, recoveryStatus: recStatus });
+    res.json({ success: true, drive: updatedDrive, profile, recoveryStatus: recStatus });
   });
 
   // 3. Backup History

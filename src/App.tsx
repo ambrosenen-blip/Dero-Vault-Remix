@@ -24,6 +24,7 @@ import { RegisteredDrivesView } from './components/RegisteredDrivesView';
 import { BackupProfilesView } from './components/BackupProfilesView';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
+import { RescueView } from './components/RescueView';
 import { HelpCentreView } from './components/HelpCentreView';
 import { ReminderBanner } from './components/ReminderBanner';
 import { UnregisteredDriveModal } from './components/UnregisteredDriveModal';
@@ -382,6 +383,13 @@ export default function App() {
           setTrayNotification((prev) => (prev?.type === 'complete' ? null : prev));
         }, 10000);
       },
+      onRecoveryDetected: (drive) => {
+        setTrayNotification({
+          type: 'info',
+          title: '🌾 Dero Vault Backup Detected',
+          message: `Drive [${drive.driveLetter}] contains a recoverable backup. You can restore your files on this computer.`,
+        });
+      },
       onSettingsUpdated: (updated) => {
         setSettings(updated);
       },
@@ -395,6 +403,17 @@ export default function App() {
         setReminderStatus(status);
       },
     });
+
+    if (window.location.hash === '#rescue') {
+      setCurrentTab('rescue');
+    }
+    const handleHash = () => {
+      if (window.location.hash === '#rescue') {
+        setCurrentTab('rescue');
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    cleanups.push(() => window.removeEventListener('hashchange', handleHash));
 
     return () => {
       cleanups.forEach((c) => {
@@ -769,6 +788,14 @@ export default function App() {
               />
             )}
 
+            {currentTab === 'rescue' && (
+              <RescueView
+                activeDrives={activeDrives}
+                onNavigateTab={(tab) => setCurrentTab(tab)}
+                onRefreshDrives={refreshAll}
+              />
+            )}
+
             {currentTab === 'help' && (
               <HelpCentreView onNavigateTab={(tab) => setCurrentTab(tab)} />
             )}
@@ -912,6 +939,11 @@ export default function App() {
         onRegister={(drive) => {
           setUnregisteredModalDrive(null);
           setRegisterModalDrive(drive);
+        }}
+        onOpenRescue={(_drive) => {
+          setUnregisteredModalDrive(null);
+          setIsMinimizedToTray(false);
+          setCurrentTab('rescue');
         }}
         onIgnore={() => {
           if (unregisteredModalDrive && (window as any).electronAPI?.dismissRegistration) {

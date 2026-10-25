@@ -26,6 +26,8 @@ export interface RemovableDrive {
   lastConnectedAt?: string;
   lastBackupAt?: string;
   backupProfileId?: string;
+  hasRecoveryPackage?: boolean;
+  recoveryStatus?: RecoveryPackageStatus;
 }
 
 export interface BackupProfile {
@@ -244,5 +246,155 @@ export interface PlatformInfo {
   osArch: string;
   hardwareDetectionValidated: boolean;
   supportStatusMessage: string;
+}
+
+export interface OfflineInstallerPackage {
+  platform: 'win32' | 'darwin' | 'linux';
+  arch: string;
+  fileName: string;
+  relativePath: string;
+  sizeBytes: number;
+  sha256: string;
+  verifiedAt: string;
+}
+
+export interface CompatibilityCheck {
+  id: 'os_detected' | 'app_compatible' | 'format_compatible' | 'backup_accessible';
+  title: string;
+  status: 'passed' | 'failed' | 'warning';
+  message: string;
+  details?: string;
+  nextAction?: string;
+}
+
+export interface EnvironmentDetectionResult {
+  hostEnvironment: {
+    platform: 'win32' | 'darwin' | 'linux' | 'other';
+    platformName: 'Windows' | 'macOS' | 'Linux' | 'Other';
+    friendlyOsName: string;
+    osRelease: string;
+    kernelVersion: string;
+    arch: string;
+    friendlyArch: string;
+    hostname: string;
+    username: string;
+    homeDir: string;
+  };
+  checks: CompatibilityCheck[];
+  allChecksPassed: boolean;
+  readyToProceed: boolean;
+  plainLanguageSummary: string;
+}
+
+export interface RecoveryManifest {
+  formatVersion: string;
+  product: string;
+  publisher: string;
+  packageVersion: string;
+  createdAt: string;
+  updatedAt: string;
+  driveStableId: string;
+  driveFriendlyName: string;
+  sourceMachine: {
+    platform: string;
+    hostname?: string;
+    username?: string;
+    arch?: string;
+    osRelease?: string;
+  };
+  backupStructure: {
+    rootFolder: string;
+    currentFolder: string;
+    versionsFolder: string;
+    reportsFolder: string;
+    recoveryFolder: string;
+    installersFolder?: string;
+  };
+  nativeLaunchers?: {
+    windows: { file: string; arch: string[]; description: string };
+    macos: { file: string; arch: string[]; description: string };
+    linux: { file: string; arch: string[]; description: string };
+  };
+  offlineInstallers?: OfflineInstallerPackage[];
+  compatibility?: {
+    minWindows: string;
+    minMacOs: string;
+    minLinux: string;
+    supportedArchitectures: string[];
+  };
+  namespaces: {
+    namespace: string;
+    originalPath: string;
+    folderName: string;
+    category?: string;
+  }[];
+  officialDownloadUrl: string;
+}
+
+export interface RecoveryPackageStatus {
+  isProvisioned: boolean;
+  provisionedAt?: string;
+  manifestPath?: string;
+  launcherPath?: string;
+  version?: string;
+  error?: string;
+}
+
+export type ConflictStrategy = 'safe_rename' | 'skip_existing' | 'overwrite_if_newer';
+
+export interface RestoreNamespaceMapping {
+  namespace: string;
+  folderName: string;
+  originalPath?: string;
+  targetPath: string;
+  fileCount: number;
+  totalBytes: number;
+  enabled: boolean;
+}
+
+export type RestoreStatus =
+  | 'idle'
+  | 'scanning'
+  | 'restoring'
+  | 'verifying'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'cancelled'
+  | 'failed';
+
+export interface RestoreSession {
+  id: string;
+  driveStableId?: string;
+  driveLetter?: string;
+  mountPath: string;
+  status: RestoreStatus;
+  startTime: string;
+  endTime?: string;
+  conflictStrategy: ConflictStrategy;
+  verifyIntegrity: boolean;
+  filesDiscovered: number;
+  filesRestored: number;
+  filesSkipped: number;
+  filesFailed: number;
+  filesVerified: number;
+  bytesTotal: number;
+  bytesTransferred: number;
+  currentFile?: string;
+  currentSpeedBps: number;
+  estimatedSecondsRemaining: number;
+  errors: { path: string; destPath: string; error: string; timestamp: string }[];
+  namespaces: RestoreNamespaceMapping[];
+}
+
+export interface DriveInspectionResult {
+  hasBackup: boolean;
+  manifest?: RecoveryManifest;
+  namespaces: RestoreNamespaceMapping[];
+  totalFiles: number;
+  totalBytes: number;
+  sourceMachine?: any;
+  error?: string;
+  environmentResult?: EnvironmentDetectionResult;
+  offlineInstallers?: OfflineInstallerPackage[];
 }
 

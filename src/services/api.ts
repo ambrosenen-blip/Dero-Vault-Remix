@@ -21,6 +21,11 @@ import {
   ServiceConfigState,
   UpdateManifest,
   LegalAcceptance,
+  DriveInspectionResult,
+  EnvironmentDetectionResult,
+  RestoreSession,
+  RestoreNamespaceMapping,
+  ConflictStrategy,
 } from '../types';
 
 const getApiBaseUrl = (): string => {
@@ -112,6 +117,76 @@ export class ApiClient {
   public static async cancelBackup(): Promise<boolean> {
     const json = await this.safeFetchJson<{ success: boolean }>('/api/backup/cancel', { method: 'POST' });
     return json.success;
+  }
+
+  // --- Recovery & Migration (Rescue Engine) APIs ---
+  public static async inspectRecoveryDrive(params: {
+    mountPath?: string;
+    stableHardwareId?: string;
+  }): Promise<{ success: boolean; result: DriveInspectionResult }> {
+    return this.safeFetchJson('/api/recovery/inspect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+  }
+
+  public static async getRecoveryEnvironment(mountPath?: string): Promise<{ success: boolean; result: EnvironmentDetectionResult }> {
+    const query = mountPath ? `?mountPath=${encodeURIComponent(mountPath)}` : '';
+    return this.safeFetchJson(`/api/recovery/environment${query}`);
+  }
+
+  public static async startRestore(options: {
+    mountPath: string;
+    driveStableId?: string;
+    driveLetter?: string;
+    namespaces: {
+      namespace: string;
+      targetPath: string;
+      enabled: boolean;
+    }[];
+    conflictStrategy: ConflictStrategy;
+    verifyIntegrity?: boolean;
+  }): Promise<{ success: boolean; session: RestoreSession }> {
+    return this.safeFetchJson('/api/recovery/restore/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options),
+    });
+  }
+
+  public static async getCurrentRestore(): Promise<{ session: RestoreSession | null; isRunning: boolean }> {
+    return this.safeFetchJson('/api/recovery/restore/current');
+  }
+
+  public static async cancelRestore(): Promise<boolean> {
+    const json = await this.safeFetchJson<{ success: boolean }>('/api/recovery/restore/cancel', {
+      method: 'POST',
+    });
+    return json.success;
+  }
+
+  public static async registerMigratedDrive(data: {
+    stableHardwareId: string;
+    friendlyName?: string;
+    sourceFolders: string[];
+    autoBackupEnabled?: boolean;
+    verifyBackups?: boolean;
+    preserveVersions?: boolean;
+  }): Promise<{ success: boolean; drive: RemovableDrive; profile: BackupProfile; recoveryStatus: any }> {
+    return this.safeFetchJson('/api/recovery/register-migrated', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async provisionRecoveryPackage(stableHardwareId: string): Promise<{ success: boolean; status: any }> {
+    return this.safeFetchJson('/api/recovery/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stableHardwareId }),
+    });
   }
 
   public static async getHistory(): Promise<BackupSession[]> {
@@ -326,6 +401,10 @@ export class ApiClient {
     onBackupStart?: (session: BackupSession) => void;
     onBackupUpdate?: (session: BackupSession) => void;
     onBackupComplete?: (session: BackupSession) => void;
+    onRecoveryDetected?: (drive: RemovableDrive) => void;
+    onRestoreStart?: (session: RestoreSession) => void;
+    onRestoreUpdate?: (session: RestoreSession) => void;
+    onRestoreComplete?: (session: RestoreSession) => void;
     onSettingsUpdated?: (settings: AppSettings) => void;
     onReminderDue?: (data: ReminderNotificationData) => void;
     onReminderStatus?: (status: ReminderStatus) => void;
@@ -422,6 +501,40 @@ export class ApiClient {
 
         es.addEventListener('settings:updated', (e) => {
           try { callbacks.onSettingsUpdated?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('drive:recovery_detected', (e) => {
+          try { callbacks.onRecoveryDetected?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('restore:start', (e) => {
+          try { callbacks.onRestoreStart?.(JSON.parse(e.data)); } catch {}
+        });
+
+        es.addEventListener('restore:catchup', (e) => {
+          try {
+            const session = JSON.parse(e.data);
+            if (['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(session.status)) {
+              callbacks.onRestoreComplete?.(session);
+            } else {
+              callbacks.onRestoreUpdate?.(session);
+            }
+          } catch {}
+        });
+
+        es.addEventListener('restore:update', (e) => {
+          try {
+            const session = JSON.parse(e.data);
+            if (['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(session.status)) {
+              callbacks.onRestoreComplete?.(session);
+            } else {
+              callbacks.onRestoreUpdate?.(session);
+            }
+          } catch {}
+        });
+
+        es.addEventListener('restore:complete', (e) => {
+          try { callbacks.onRestoreComplete?.(JSON.parse(e.data)); } catch {}
         });
 
         es.addEventListener('reminder:due', (e) => {
