@@ -27,14 +27,72 @@ export interface ComparisonResult {
 
 export class FileComparison {
   /**
-   * Generates a safe, collision-free subfolder identifier for a source directory.
-   * e.g., 'C:\Users\User\Documents' -> 'C_Documents'
+   * Normalizes a source directory path, base folder name, and stable namespace.
+   * Handles drive roots (e.g. 'D:', 'D:\', 'D:/', '/') collision-free as 'D_Root'.
    */
-  public static getSourceNamespace(sourceBaseFolder: string, sourceFolderName: string): string {
-    const driveMatch = sourceBaseFolder.match(/^([a-zA-Z]):/);
+  public static normalizeSourceFolder(folderPath: string): { normalizedPath: string; folderName: string; namespace: string } {
+    let normalized = folderPath.trim();
+    // Normalize Windows drive letter: e.g. "D:" or "D:/" -> "D:\"
+    const winDriveMatch = normalized.match(/^([a-zA-Z]):[\\/]?$/);
+    if (winDriveMatch) {
+      const driveLetter = winDriveMatch[1].toUpperCase();
+      normalized = `${driveLetter}:\\`;
+      return {
+        normalizedPath: normalized,
+        folderName: 'Root',
+        namespace: `${driveLetter}_Root`,
+      };
+    }
+
+    // Windows drive with subpath: e.g. "D:\OMAA_CLIENTS_WORK"
+    const winDrivePathMatch = normalized.match(/^([a-zA-Z]):[\\/](.*)$/);
+    if (winDrivePathMatch) {
+      const driveLetter = winDrivePathMatch[1].toUpperCase();
+      const winBasename = path.win32.basename(normalized);
+      const folderName = winBasename || 'Root';
+      const cleanName = folderName.replace(/[^a-zA-Z0-9_\-\s]/g, '_').trim();
+      const namespace = `${driveLetter}_${cleanName || 'Root'}`;
+      return {
+        normalizedPath: normalized,
+        folderName,
+        namespace,
+      };
+    }
+
+    // POSIX root "/"
+    if (normalized === '/' || normalized === '') {
+      return {
+        normalizedPath: '/',
+        folderName: 'Root',
+        namespace: 'Root',
+      };
+    }
+
+    // Standard folder
+    const folderName = path.basename(normalized) || 'Root';
+    const driveMatch = normalized.match(/^([a-zA-Z]):/);
     const drivePrefix = driveMatch ? `${driveMatch[1].toUpperCase()}_` : '';
-    const cleanName = sourceFolderName.replace(/[^a-zA-Z0-9_\-\s]/g, '_').trim();
-    return `${drivePrefix}${cleanName}`;
+    const cleanName = folderName.replace(/[^a-zA-Z0-9_\-\s]/g, '_').trim();
+    return {
+      normalizedPath: normalized,
+      folderName,
+      namespace: `${drivePrefix}${cleanName || 'Root'}`,
+    };
+  }
+
+  /**
+   * Generates a safe, collision-free subfolder identifier for a source directory.
+   * e.g., 'C:\Users\User\Documents' -> 'C_Documents', 'D:\' -> 'D_Root'
+   */
+  public static getSourceNamespace(sourceBaseFolder: string, sourceFolderName?: string): string {
+    const info = this.normalizeSourceFolder(sourceBaseFolder);
+    if (sourceFolderName && sourceFolderName !== 'Root' && sourceFolderName !== path.basename(sourceBaseFolder)) {
+      const driveMatch = sourceBaseFolder.match(/^([a-zA-Z]):/);
+      const drivePrefix = driveMatch ? `${driveMatch[1].toUpperCase()}_` : '';
+      const cleanName = sourceFolderName.replace(/[^a-zA-Z0-9_\-\s]/g, '_').trim();
+      return `${drivePrefix}${cleanName}`;
+    }
+    return info.namespace;
   }
 
   /**
@@ -67,7 +125,8 @@ export class FileComparison {
     if (isInitialBackup) {
       for (const source of scannedFiles) {
         const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
-        const destFilePath = path.join(currentBackupDir, sourceNamespace, source.relativePath);
+        const safeRelative = source.relativePath.replace(/^([\\/]|(\.\.[\\/]))+/, '');
+        const destFilePath = path.join(currentBackupDir, sourceNamespace, safeRelative);
         const item: PlannedFileCopy = {
           source,
           destinationPath: destFilePath,
@@ -110,8 +169,10 @@ export class FileComparison {
     const worker = async () => {
       while (nextIndex < scannedFiles.length) {
         const source = scannedFiles[nextIndex++];
+        if (!source) break;
         const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
-        const destFilePath = path.join(currentBackupDir, sourceNamespace, source.relativePath);
+        const safeRelative = source.relativePath.replace(/^([\\/]|(\.\.[\\/]))+/, '');
+        const destFilePath = path.join(currentBackupDir, sourceNamespace, safeRelative);
 
         try {
           const destStat = await fs.promises.stat(destFilePath);
@@ -124,7 +185,7 @@ export class FileComparison {
             lock.pushSkip(source);
           } else {
             const versionArchivePath = preserveVersions
-              ? path.join(versionsBaseDir, revisionFolder, sourceNamespace, source.relativePath)
+              ? path.join(versionsBaseDir, revisionFolder, sourceNamespace, safeRelative)
               : undefined;
 
             lock.pushMod({

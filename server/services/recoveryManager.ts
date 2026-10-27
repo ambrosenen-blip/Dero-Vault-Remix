@@ -82,15 +82,14 @@ export class RecoveryManager {
         await fs.promises.mkdir(recoveryDir, { recursive: true });
       }
 
-      // 4. Build namespace metadata
+      // 4. Build namespace metadata with unified folder normalization
       const namespaces = profile.sourceFolders.map((sf) => {
-        const folderName = path.basename(sf) || sf;
-        const namespace = FileComparison.getSourceNamespace(sf, folderName);
+        const info = FileComparison.normalizeSourceFolder(sf);
         return {
-          namespace,
-          originalPath: sf,
-          folderName,
-          category: this.detectFolderCategory(folderName),
+          namespace: info.namespace,
+          originalPath: info.normalizedPath,
+          folderName: info.folderName,
+          category: this.detectFolderCategory(info.folderName),
         };
       });
 
@@ -114,18 +113,32 @@ export class RecoveryManager {
         try {
           const workspaceRoot = process.cwd();
           const releaseDir = path.join(workspaceRoot, 'release');
+          const winX64Dir = path.join(installersDir, 'Windows_x64');
+
           if (fs.existsSync(releaseDir)) {
             if (!fs.existsSync(installersDir)) {
               await fs.promises.mkdir(installersDir, { recursive: true });
             }
+            if (!fs.existsSync(winX64Dir)) {
+              await fs.promises.mkdir(winX64Dir, { recursive: true });
+            }
+
             const candidateFiles = await fs.promises.readdir(releaseDir);
             for (const cFile of candidateFiles) {
               if (cFile.endsWith('.exe') || cFile.endsWith('.zip') || cFile.endsWith('.AppImage') || cFile.endsWith('.deb')) {
                 const srcPath = path.join(releaseDir, cFile);
-                const targetPath = path.join(installersDir, cFile);
                 const stat = await fs.promises.stat(srcPath);
+                if (stat.isDirectory()) continue;
 
-                // Copy if not exists or different size
+                let plat: 'win32' | 'darwin' | 'linux' = 'win32';
+                if (cFile.includes('mac') || cFile.endsWith('.dmg')) plat = 'darwin';
+                else if (cFile.includes('linux') || cFile.endsWith('.AppImage') || cFile.endsWith('.deb')) plat = 'linux';
+
+                // Target paths: standard Installers root and Windows_x64 subdirectory for Windows
+                const targetPath = (plat === 'win32') 
+                  ? path.join(winX64Dir, cFile === 'Dero Vault-1.0.0-win.zip' ? 'DeroVault-Windows-x64.zip' : (cFile.endsWith('.exe') ? 'DeroVault-Setup.exe' : cFile))
+                  : path.join(installersDir, cFile);
+
                 let shouldCopy = true;
                 if (fs.existsSync(targetPath)) {
                   const existingStat = await fs.promises.stat(targetPath);
@@ -134,18 +147,22 @@ export class RecoveryManager {
 
                 if (shouldCopy) {
                   await fs.promises.copyFile(srcPath, targetPath);
+                  // Also maintain legacy symlink / mirror at installersDir root if win32
+                  if (plat === 'win32' && !fs.existsSync(path.join(installersDir, 'DeroVault-Setup.exe'))) {
+                    try {
+                      await fs.promises.copyFile(srcPath, path.join(installersDir, 'DeroVault-Setup.exe'));
+                    } catch {}
+                  }
                 }
 
                 const hash = await this.calculateSha256(targetPath);
-                let plat: 'win32' | 'darwin' | 'linux' = 'win32';
-                if (cFile.includes('mac') || cFile.endsWith('.dmg')) plat = 'darwin';
-                else if (cFile.includes('linux') || cFile.endsWith('.AppImage') || cFile.endsWith('.deb')) plat = 'linux';
+                const relPath = path.relative(destRoot, targetPath).replace(/\\/g, '/');
 
                 offlineInstallers.push({
                   platform: plat,
                   arch: 'x64',
-                  fileName: cFile,
-                  relativePath: `DERO_VAULT_BACKUP/RECOVERY/Installers/${cFile}`,
+                  fileName: path.basename(targetPath),
+                  relativePath: relPath,
                   sizeBytes: stat.size,
                   sha256: hash,
                   verifiedAt: now,
@@ -337,10 +354,34 @@ export class RecoveryManager {
       'echo ======================================================================',
       'echo.',
       'SET SCRIPT_DIR=%~dp0',
+      'IF EXIST "%SCRIPT_DIR%Installers\\Windows_x64\\DeroVault-Setup.exe" (',
+      '  echo Found offline Dero Vault installer on this backup drive.',
+      '  echo Launching Dero Vault Setup...',
+      '  start "" "%SCRIPT_DIR%Installers\\Windows_x64\\DeroVault-Setup.exe"',
+      '  goto done',
+      ')',
+      'IF EXIST "%SCRIPT_DIR%DERO_VAULT_BACKUP\\RECOVERY\\Installers\\Windows_x64\\DeroVault-Setup.exe" (',
+      '  echo Found offline Dero Vault installer on this backup drive.',
+      '  echo Launching Dero Vault Setup...',
+      '  start "" "%SCRIPT_DIR%DERO_VAULT_BACKUP\\RECOVERY\\Installers\\Windows_x64\\DeroVault-Setup.exe"',
+      '  goto done',
+      ')',
       'IF EXIST "%SCRIPT_DIR%Installers\\DeroVault-Setup.exe" (',
       '  echo Found offline Dero Vault installer on this backup drive.',
       '  echo Launching Dero Vault Setup...',
       '  start "" "%SCRIPT_DIR%Installers\\DeroVault-Setup.exe"',
+      '  goto done',
+      ')',
+      'IF EXIST "%SCRIPT_DIR%DERO_VAULT_BACKUP\\RECOVERY\\Installers\\DeroVault-Setup.exe" (',
+      '  echo Found offline Dero Vault installer on this backup drive.',
+      '  echo Launching Dero Vault Setup...',
+      '  start "" "%SCRIPT_DIR%DERO_VAULT_BACKUP\\RECOVERY\\Installers\\DeroVault-Setup.exe"',
+      '  goto done',
+      ')',
+      'IF EXIST "%SCRIPT_DIR%..\\..\\Installers\\Windows_x64\\DeroVault-Setup.exe" (',
+      '  echo Found offline Dero Vault installer on this backup drive.',
+      '  echo Launching Dero Vault Setup...',
+      '  start "" "%SCRIPT_DIR%..\\..\\Installers\\Windows_x64\\DeroVault-Setup.exe"',
       '  goto done',
       ')',
       'IF EXIST "%SCRIPT_DIR%..\\..\\Installers\\DeroVault-Setup.exe" (',
@@ -509,9 +550,8 @@ export class RecoveryManager {
       '- 100% Local: No files or personal data are ever uploaded to the cloud.',
       '- Source Safe: Your backup files on this drive will NEVER be modified or deleted during recovery.',
       '- Safe Conflicts: Existing files on the new computer are never silently overwritten.',
-      '- Integrity Verified: Files are verified using cryptographic SHA-256 checksums.',
-      '',
-      'Need the latest installer? Visit: https://github.com/Dero-Vault/Dero-Vault',
+      '- Offline Self-Contained: Offline installer and rescue utilities are stored on this drive.',
+      '- Direct File Access: All backed-up files can also be browsed and copied directly from DERO_VAULT_BACKUP/CURRENT.',
       '==============================================================================',
     ].join('\r\n');
   }
@@ -965,31 +1005,29 @@ export class RecoveryManager {
           </a>
         \`;
       } else {
-        let platformInstruction = '';
-        let downloadLink = manifestData.officialDownloadUrl || 'https://github.com/Dero-Vault/Dero-Vault';
-        if (clientPlatform === 'win32') {
-          platformInstruction = 'For Windows (10/11): Run <code>Rescue-Launcher.bat</code> or run <code>DeroVault-Setup.exe</code> if present on this drive.';
-        } else if (clientPlatform === 'darwin') {
-          platformInstruction = 'For macOS: Download the Dero Vault DMG from the official distribution route.';
-        } else {
-          platformInstruction = 'For Linux: Download the Dero Vault AppImage from the official distribution route.';
-        }
+        const installers = manifestData.offlineInstallers || [];
+        const winInstaller = installers.find((i: any) => i.platform === 'win32') || {
+          fileName: 'DeroVault-Setup.exe',
+          relativePath: 'DERO_VAULT_BACKUP/RECOVERY/Installers/Windows_x64/DeroVault-Setup.exe',
+        };
 
         content.innerHTML = \`
           <p style="color: #CBD5E1; font-size: 13px; margin-bottom: 14px;">
-            Dero Vault is not currently active on this computer. Follow these guided steps to restore your office:
+            Dero Vault is not currently active on this computer. You can restore your files completely offline without internet:
           </p>
+          <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(244, 166, 42, 0.3); padding: 14px; border-radius: 8px; margin-bottom: 16px;">
+            <strong style="color: #F4A62A;">Offline Rescue Available:</strong>
+            <p style="color: #CBD5E1; font-size: 13px; margin-top: 6px;">
+              An offline installer is stored directly on this drive at:
+              <br><code style="background: #0f172a; padding: 2px 6px; border-radius: 4px; color: #38bdf8;">\${winInstaller.relativePath}</code>
+            </p>
+            \${winInstaller.sha256 ? \`<p style="color: #94a3b8; font-size: 11px; margin-top: 4px;">SHA-256: <code>\${winInstaller.sha256.substring(0, 32)}...</code></p>\` : ''}
+          </div>
           <ol class="step-list">
-            <li><strong>Install Dero Vault:</strong> Obtain the installer from the official repository or release folder on this drive.<br>
-              <div style="margin: 8px 0;">
-                <a href="\${downloadLink}" target="_blank" style="color: #F4A62A; text-decoration: underline; font-weight: 600;">Visit Official Dero Vault Distribution</a>
-              </div>
-              <span style="font-size: 12px; color: #94A3B8;">\${platformInstruction}</span>
-            </li>
-            <li><strong>Complete Setup:</strong> Launch the installer and accept the software licence and privacy notice.</li>
-            <li><strong>Open Rescue Workspace:</strong> Once installed, launch Dero Vault. The app will recognise this backup drive and offer to restore your files.</li>
-            <li><strong>Review Destination &amp; Restore:</strong> Review folder mappings (e.g. mapping old Documents to your new user profile) and confirm restoration.</li>
-            <li><strong>Register for Automatic Protection:</strong> Once recovery finishes, register the drive with one click to keep your replacement computer protected automatically.</li>
+            <li><strong>Launch Offline Setup:</strong> In the root of this USB drive, double-click <strong>Rescue-Windows.bat</strong> (or run the installer from the path above).</li>
+            <li><strong>Complete Setup:</strong> Launch the application. Dero Vault will recognize this drive and present the Rescue &amp; Migration workspace.</li>
+            <li><strong>Select What to Restore:</strong> Choose target destination folders on your new computer and begin recovery.</li>
+            <li><strong>Zero Software Option:</strong> You can also copy your files immediately without installing Dero Vault by browsing <code>DERO_VAULT_BACKUP/CURRENT</code>.</li>
           </ol>
         \`;
       }
@@ -1003,23 +1041,17 @@ export class RecoveryManager {
       const content = document.getElementById('flowContent');
       panel.classList.remove('hidden');
 
-      title.innerText = "Manual Rescue — Self-Paced Restoration";
-      const downloadLink = manifestData.officialDownloadUrl || 'https://github.com/Dero-Vault/Dero-Vault';
+      title.innerText = "Manual Rescue & Direct File Access";
 
       content.innerHTML = \`
         <p style="color: #CBD5E1; font-size: 13px; margin-bottom: 14px;">
-          Install Dero Vault on your replacement computer at your convenience, then use the built-in Rescue feature:
+          You can restore your files immediately using any standard file manager:
         </p>
         <ol class="step-list">
-          <li><strong>Get the Installer:</strong> Download or copy the installer from the official source:<br>
-            <div style="margin: 6px 0;">
-              <a href="\${downloadLink}" target="_blank" style="color: #F4A62A; text-decoration: underline; font-weight: 600;">Official Dero Vault Downloads</a>
-            </div>
-          </li>
-          <li><strong>Install &amp; Launch:</strong> Install Dero Vault and launch the application.</li>
-          <li><strong>Navigate to Rescue &amp; Migration:</strong> In Dero Vault, open the <strong>Rescue &amp; Migration</strong> section or connect this drive.</li>
-          <li><strong>Select What to Restore:</strong> Select which folders to recover, choose custom destination folders if desired, and set your conflict strategy.</li>
-          <li><strong>Verify Integrity:</strong> Files will be restored and verified against the backup using cryptographic SHA-256 checks.</li>
+          <li><strong>Direct File Access:</strong> Browse to <code>DERO_VAULT_BACKUP/CURRENT</code> on this USB drive. All your protected files are stored in their original folder hierarchy.</li>
+          <li><strong>Copy to New Computer:</strong> Select the folders you need and copy them directly to your destination folders (e.g. Documents, Desktop).</li>
+          <li><strong>Version History:</strong> If you need older file revisions, previous versions are preserved in <code>DERO_VAULT_BACKUP/VERSIONS</code>.</li>
+          <li><strong>Offline Installer:</strong> If you prefer guided restoration, double-click <code>Rescue-Windows.bat</code> to launch the offline installer.</li>
         </ol>
       \`;
 

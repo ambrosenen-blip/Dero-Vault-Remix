@@ -62,6 +62,8 @@ export class BackupVerification {
     const worker = async () => {
       while (nextIndex < copiedFiles.length) {
         const item = copiedFiles[nextIndex++];
+        if (!item) break;
+
         const source = item.source.fullPath;
         const dest = item.destinationPath;
 
@@ -78,8 +80,8 @@ export class BackupVerification {
             continue;
           }
 
-          // 3. Cryptographic Checksum check (for files under 100MB to remain snappy)
-          if (verifyChecksums && item.size < 100 * 1024 * 1024) {
+          // 3. Cryptographic Checksum check (SHA-256 streaming verification)
+          if (verifyChecksums) {
             try {
               let sourceHash = precomputedHashes?.get(source);
               if (!sourceHash) {

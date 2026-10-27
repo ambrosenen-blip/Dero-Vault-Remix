@@ -106,6 +106,7 @@ export interface BackupSession {
   reportPath?: string;
   txtReportPath?: string;
   reportSummary?: string;
+  capacityAssessment?: any;
 }
 
 export type ReminderFrequency = 'daily' | 'weekly' | 'monthly';

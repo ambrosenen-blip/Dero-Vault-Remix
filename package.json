@@ -28,7 +28,10 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist dist-server release",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:reconciliation": "tsx scripts/test-reconciliation-suite.ts",
+    "test:capacity": "tsx scripts/test-capacity-safety.ts",
+    "test": "tsx scripts/test-reconciliation-suite.ts && tsx scripts/test-rescue-migration.ts && tsx scripts/test-startup-patrol.ts && tsx scripts/test-capacity-safety.ts"
   },
   "build": {
     "appId": "com.derovault.app",

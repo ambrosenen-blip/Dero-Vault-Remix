@@ -12,9 +12,10 @@ import path from 'path';
 import crypto from 'crypto';
 import { BackupProfile, BackupSession, FileCopyError, RemovableDrive } from '../types.js';
 import { LocalDatabase } from './localDb.js';
-import { FileScanner, ScannedFile } from './fileScanner.js';
+import { FileScanner, ScannedFile, ScanError } from './fileScanner.js';
 import { ComparisonResult, FileComparison, PlannedFileCopy } from './fileComparison.js';
 import { BackupVerification } from './verification.js';
+import { CapacitySafetyService } from './capacitySafety.js';
 
 export class BackupEngine extends EventEmitter {
   private db: LocalDatabase;
@@ -150,9 +151,10 @@ export class BackupEngine extends EventEmitter {
     this.emit('session:update', session);
 
     let scannedFiles: ScannedFile[] = [];
+    let scanErrors: ScanError[] = [];
     try {
       let lastScanEmit = 0;
-      scannedFiles = await FileScanner.scanFolders(profile.sourceFolders, (count, current) => {
+      const scanResult = await FileScanner.scanFolders(profile.sourceFolders, (count, current) => {
         session.filesScanned = count;
         session.currentFile = current;
         const now = Date.now();
@@ -161,6 +163,23 @@ export class BackupEngine extends EventEmitter {
           this.emit('session:update', session);
         }
       });
+
+      scannedFiles = scanResult.files;
+      scanErrors = scanResult.errors || [];
+      session.filesScanned = scannedFiles.length;
+
+      if (scanErrors.length > 0) {
+        for (const sErr of scanErrors) {
+          session.errors.push({
+            path: sErr.path,
+            destPath: destMountPath,
+            error: sErr.error,
+            timestamp: new Date().toISOString(),
+          });
+          session.filesFailed++;
+        }
+        this.db.log('warn', 'BackupEngine', `File scanner encountered ${scanErrors.length} scan error(s) during enumeration.`);
+      }
     } catch (scanErr: any) {
       session.status = 'failed';
       session.endTime = new Date().toISOString();
@@ -225,38 +244,56 @@ export class BackupEngine extends EventEmitter {
 
     if (this.isCancelled) return;
 
-    // Step 3: Check free disk space on destination drive
-    const requiredBytes = comparison.totalBytesToCopy;
-    const availableBytes = drive.freeBytes;
+    // Step 3: Comprehensive Preflight Capacity Assessment
+    const isTurbo = session.mode === 'turbo';
+    const preflight = await CapacitySafetyService.assessPreflight({
+      toCopy: comparison.toCopy,
+      scannedFiles,
+      scanErrors,
+      destMountPath,
+      drive,
+      isTurbo,
+      preserveVersions: profile.preserveVersions,
+    });
 
-    if (availableBytes > 0 && requiredBytes > availableBytes) {
+    session.capacityAssessment = preflight;
+
+    if (!preflight.canProceed) {
       session.status = 'stopped_insufficient_space';
       session.endTime = new Date().toISOString();
       session.errors.push({
         path: destMountPath,
         destPath: destMountPath,
-        error: `Insufficient storage space on destination ${drive.driveLetter}. Required: ${this.formatBytes(requiredBytes)}, Available: ${this.formatBytes(availableBytes)}.`,
+        error: preflight.message || 'Capacity safety check failed: destination cannot safely accommodate backup.',
         timestamp: new Date().toISOString(),
       });
-      this.db.saveBackupSession(session);
-      this.db.log('error', 'BackupEngine', `Backup halted: Insufficient space on ${drive.driveLetter}`);
+      await this.generateBackupReport(destMountPath, session);
+      this.db.saveBackupSession(session, true);
+      this.db.log('error', 'BackupEngine', `Backup halted [${preflight.reason}]: ${preflight.message}`);
       this.emit('session:update', session);
+      this.emit('session:complete', session);
       return;
     }
 
     // Step 3.5: Fast-path for incremental backup with zero changes
     if (comparison.toCopy.length === 0) {
       session.endTime = new Date().toISOString();
-      session.status = 'completed';
+      session.status = session.errors.length > 0 ? 'completed_with_errors' : 'completed';
       session.currentFile = undefined;
       session.currentSpeedBps = 0;
       session.estimatedSecondsRemaining = 0;
-      session.isVerified = true;
-      session.verificationNotes = `Up to date: ${comparison.skipped.length} file(s) scanned and confirmed unchanged.`;
+      session.isVerified = session.errors.length === 0;
+      session.verificationNotes = session.errors.length > 0
+        ? `Incremental check finished (${comparison.skipped.length} unchanged files), but ${session.errors.length} enumeration error(s) occurred.`
+        : `Up to date: ${comparison.skipped.length} file(s) scanned and confirmed unchanged.`;
 
       await this.generateBackupReport(destMountPath, session);
       this.db.saveBackupSession(session, true);
-      this.db.log('success', 'BackupEngine', `Backup completed for "${session.driveName}". 0 new/modified files, ${comparison.skipped.length} unchanged files skipped.`);
+      this.db.log(
+        session.status === 'completed' ? 'success' : 'warn',
+        'BackupEngine',
+        `Backup ${session.status} for "${session.driveName}". 0 new/modified files, ${comparison.skipped.length} unchanged files skipped.`
+      );
       this.emit('session:update', session);
       this.emit('session:complete', session);
       return;
@@ -287,7 +324,6 @@ export class BackupEngine extends EventEmitter {
     // Concurrency pipeline selection:
     // If Turbo mode: bounded adaptive parallel workers (up to 16 for small/mixed files, 4 for large files)
     // If Standard mode: strictly conservative single sequential worker (concurrency = 1)
-    const isTurbo = session.mode === 'turbo';
     const hasLargeFiles = comparison.toCopy.some((item) => item.size > 30 * 1024 * 1024);
     const concurrency = isTurbo
       ? (hasLargeFiles ? 4 : Math.min(16, Math.max(4, comparison.toCopy.length)))
@@ -414,6 +450,7 @@ export class BackupEngine extends EventEmitter {
           if (!fs.existsSync(destMountPath)) {
             copyInterrupted = true;
             session.status = 'interrupted';
+            session.isVerified = false;
             session.endTime = new Date().toISOString();
             session.errors.push({
               path: item.source.fullPath,
@@ -421,8 +458,26 @@ export class BackupEngine extends EventEmitter {
               error: 'The backup drive was disconnected during copy.',
               timestamp: new Date().toISOString(),
             });
-            this.db.saveBackupSession(session);
+            this.db.saveBackupSession(session, true);
             this.db.log('error', 'BackupEngine', `BACKUP INTERRUPTED: Drive ${drive.driveLetter} was disconnected.`);
+            this.emit('session:update', session);
+            return;
+          }
+
+          // Check if error was caused by destination running out of disk space (ENOSPC)
+          if (CapacitySafetyService.isDiskFullError(copyErr)) {
+            copyInterrupted = true;
+            session.status = 'stopped_insufficient_space';
+            session.isVerified = false;
+            session.endTime = new Date().toISOString();
+            session.errors.push({
+              path: item.source.fullPath,
+              destPath: item.destinationPath,
+              error: `Destination drive ran out of space during copy (ENOSPC): ${copyErr.message}`,
+              timestamp: new Date().toISOString(),
+            });
+            this.db.saveBackupSession(session, true);
+            this.db.log('error', 'BackupEngine', `BACKUP STOPPED: Destination ${drive.driveLetter} ran out of space during copy.`);
             this.emit('session:update', session);
             return;
           }
@@ -450,7 +505,22 @@ export class BackupEngine extends EventEmitter {
     }
     await Promise.all(workers);
 
-    if (this.isCancelled || copyInterrupted) return;
+    if (this.isCancelled) return;
+
+    if (copyInterrupted) {
+      session.endTime = new Date().toISOString();
+      session.isVerified = false;
+      session.currentFile = undefined;
+      session.currentSpeedBps = 0;
+      session.estimatedSecondsRemaining = 0;
+      if (fs.existsSync(destMountPath)) {
+        await this.generateBackupReport(destMountPath, session);
+      }
+      this.db.saveBackupSession(session, true);
+      this.emit('session:update', session);
+      this.emit('session:complete', session);
+      return;
+    }
 
     // Step 5: Verification Phase
     if (profile.verifyBackups && successfullyCopied.length > 0) {
@@ -469,7 +539,7 @@ export class BackupEngine extends EventEmitter {
           precomputedHashes
         );
 
-        session.isVerified = verifyResult.isVerified;
+        session.isVerified = verifyResult.isVerified && session.errors.length === 0;
         if (!verifyResult.isVerified) {
           for (const f of verifyResult.failures) {
             session.errors.push({
@@ -478,6 +548,7 @@ export class BackupEngine extends EventEmitter {
               error: f.reason,
               timestamp: new Date().toISOString(),
             });
+            session.filesFailed++;
           }
         }
         session.verificationNotes = `Verified ${verifyResult.totalVerified} files (${verifyResult.checksumVerifiedCount} with SHA-256).`;
@@ -486,13 +557,20 @@ export class BackupEngine extends EventEmitter {
         session.verificationNotes = `Verification check error: ${verErr.message}`;
       }
     } else {
-      session.isVerified = successfullyCopied.length > 0;
+      session.isVerified = successfullyCopied.length > 0 && session.errors.length === 0;
       session.verificationNotes = 'Skipped checksum verification (0 new files or configured off).';
     }
 
     // Step 6: Generate Backup Report on Destination Drive
     session.endTime = new Date().toISOString();
-    session.status = session.errors.length > 0 ? 'completed_with_errors' : 'completed';
+    const hasUnresolvedIssues = session.errors.length > 0 || session.filesFailed > 0 || !session.isVerified;
+    if (hasUnresolvedIssues) {
+      session.isVerified = false;
+      session.status = (session.filesCopied === 0 && comparison.toCopy.length > 0) ? 'failed' : 'completed_with_errors';
+    } else {
+      session.status = 'completed';
+      session.isVerified = true;
+    }
     session.currentFile = undefined;
     session.currentSpeedBps = 0;
     session.estimatedSecondsRemaining = 0;

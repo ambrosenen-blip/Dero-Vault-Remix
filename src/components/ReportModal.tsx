@@ -80,7 +80,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ session, onClose }) =>
               ) : session.status === 'completed_with_errors' ? (
                 <span className="inline-flex items-center gap-1 font-bold text-[#F4A62A]">
                   <AlertTriangle className="w-4 h-4" />
-                  <span>Completed with {session.errors.length} Warning(s)</span>
+                  <span>Partial Backup ({session.errors.length} Error(s))</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 font-bold text-rose-400">
@@ -93,32 +93,39 @@ export const ReportModal: React.FC<ReportModalProps> = ({ session, onClose }) =>
         </div>
 
         {/* Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
           <div className="p-3 bg-[#132247] border border-[#1E3466] rounded-lg">
-            <span className="text-slate-300 block mb-1">Files scanned</span>
+            <span className="text-slate-300 block mb-1">Discovered</span>
             <span className="font-mono text-base font-bold text-white">
               {session.filesScanned.toLocaleString()}
             </span>
           </div>
 
           <div className="p-3 bg-[#132247] border border-[#1E3466] rounded-lg">
-            <span className="text-slate-300 block mb-1">New files written</span>
+            <span className="text-slate-300 block mb-1">New written</span>
             <span className="font-mono text-base font-bold text-[#00A884]">
               {session.newFilesCount.toLocaleString()}
             </span>
           </div>
 
           <div className="p-3 bg-[#132247] border border-[#1E3466] rounded-lg">
-            <span className="text-slate-300 block mb-1">Modified files</span>
+            <span className="text-slate-300 block mb-1">Modified</span>
             <span className="font-mono text-base font-bold text-[#F4A62A]">
               {session.modifiedFilesCount.toLocaleString()}
             </span>
           </div>
 
           <div className="p-3 bg-[#132247] border border-[#1E3466] rounded-lg">
-            <span className="text-slate-300 block mb-1">Skipped (Unchanged)</span>
+            <span className="text-slate-300 block mb-1">Skipped (Identical)</span>
             <span className="font-mono text-base font-bold text-slate-300">
               {session.filesSkipped.toLocaleString()}
+            </span>
+          </div>
+
+          <div className={`p-3 border rounded-lg ${session.filesFailed > 0 ? 'bg-rose-950/30 border-rose-800/60' : 'bg-[#132247] border-[#1E3466]'}`}>
+            <span className="text-slate-300 block mb-1">Failed / Errors</span>
+            <span className={`font-mono text-base font-bold ${session.filesFailed > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+              {session.filesFailed.toLocaleString()}
             </span>
           </div>
         </div>

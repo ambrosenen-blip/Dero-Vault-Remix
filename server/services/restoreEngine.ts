@@ -53,6 +53,8 @@ export interface DriveInspectionResult {
   error?: string;
   environmentResult?: EnvironmentDetectionResult;
   offlineInstallers?: OfflineInstallerPackage[];
+  isIncompleteBackup?: boolean;
+  incompleteReason?: string;
 }
 
 export class RestoreEngine extends EventEmitter {
@@ -201,6 +203,36 @@ export class RestoreEngine extends EventEmitter {
       } catch {}
     }
 
+    // Inspect backup reports to detect incomplete or partial backup runs
+    let isIncompleteBackup = false;
+    let incompleteReason: string | undefined;
+    const reportsDir = path.join(mountPath, 'DERO_VAULT_BACKUP', 'REPORTS');
+    if (fs.existsSync(reportsDir)) {
+      try {
+        const reportFiles = (await fs.promises.readdir(reportsDir))
+          .filter((f) => f.startsWith('report_') && f.endsWith('.json'))
+          .sort()
+          .reverse();
+
+        if (reportFiles.length > 0) {
+          const latestReportPath = path.join(reportsDir, reportFiles[0]);
+          const reportRaw = await fs.promises.readFile(latestReportPath, 'utf-8');
+          const latestReport = JSON.parse(reportRaw);
+
+          if (
+            latestReport.status !== 'completed' ||
+            (latestReport.errors && latestReport.errors.length > 0) ||
+            latestReport.filesFailed > 0 ||
+            latestReport.isVerified === false
+          ) {
+            isIncompleteBackup = true;
+            const errCount = (latestReport.errors?.length || 0) + (latestReport.filesFailed || 0);
+            incompleteReason = `Latest backup session (${latestReport.id || 'recent'}) finished with status "${latestReport.status}" and ${errCount} error(s)/unverified file(s). Some source files may be missing from this backup.`;
+          }
+        }
+      } catch {}
+    }
+
     return {
       hasBackup: true,
       manifest,
@@ -210,6 +242,8 @@ export class RestoreEngine extends EventEmitter {
       sourceMachine: manifest?.sourceMachine,
       environmentResult: envResult,
       offlineInstallers: offlineInstallers.length > 0 ? offlineInstallers : undefined,
+      isIncompleteBackup,
+      incompleteReason,
     };
   }
 

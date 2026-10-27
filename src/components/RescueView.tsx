@@ -620,6 +620,24 @@ export const RescueView: React.FC<RescueViewProps> = ({
       {/* Step C: Dual-Option Choice Grid (when not restoring or already completed) */}
       {!isRestoring && !isComplete && (
         <>
+          {/* Incomplete Backup Alert Banner */}
+          {inspection?.isIncompleteBackup && (
+            <div className="bg-amber-500/10 border-2 border-amber-500/60 rounded-xl p-4 flex items-start gap-3 text-amber-200">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                  Incomplete Backup Detected
+                </h4>
+                <p className="text-xs text-amber-100">
+                  {inspection.incompleteReason || 'The backup on this drive was interrupted or contained verification errors. Some source files may be missing.'}
+                </p>
+                <p className="text-[11px] text-amber-200/80">
+                  You can restore any intact files below, but this drive cannot be considered a complete replica of the source office.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Primary Option: Automatic Rescue */}
             <div

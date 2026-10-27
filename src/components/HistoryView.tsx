@@ -69,7 +69,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                 filter === 'errors' ? 'bg-[#162852] text-[#F4A62A] font-semibold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              With Warnings
+              Issues / Incomplete
             </button>
           </div>
 
@@ -163,9 +163,12 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                             <span>Success</span>
                           </span>
                         ) : item.status === 'completed_with_errors' ? (
-                          <span className="inline-flex items-center gap-1.5 text-[#F4A62A] font-medium">
+                          <span
+                            className="inline-flex items-center gap-1.5 text-[#F4A62A] font-medium"
+                            title="Backup completed with errors. Some files are missing or unverified."
+                          >
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            <span>{item.errors.length} error(s)</span>
+                            <span>Partial ({item.errors.length} failed)</span>
                           </span>
                         ) : item.status === 'interrupted' ? (
                           <span className="inline-flex items-center gap-1.5 text-rose-400 font-medium">
@@ -194,10 +197,10 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       <td className="py-3.5 px-4">
                         <span
                           className={`text-xs font-medium ${
-                            item.isVerified ? 'text-[#00A884]' : 'text-slate-400'
+                            item.isVerified && item.status === 'completed' ? 'text-[#00A884]' : 'text-amber-400'
                           }`}
                         >
-                          {item.isVerified ? 'Verified ✓' : 'Standard'}
+                          {item.isVerified && item.status === 'completed' ? 'Verified ✓' : 'Unverified / Issues'}
                         </span>
                       </td>
 

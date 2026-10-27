@@ -4,7 +4,7 @@
  * Everything important fits immediately on one screen at standard desktop resolutions (1200x800 & 960x640).
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   HardDrive,
   ShieldCheck,
@@ -58,6 +58,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenRegisterModal,
   onNavigateTab,
 }) => {
+  const [capacityWarningDismissed, setCapacityWarningDismissed] = useState(false);
+
   // Format helpers
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
@@ -241,6 +243,62 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
         </div>
       </header>
+
+      {/* Capacity Assessment Warning Banner */}
+      {latestSession && latestSession.status === 'stopped_insufficient_space' && !capacityWarningDismissed && (
+        <div className="bg-[#1C1322] border border-amber-500/50 rounded-xl p-3.5 shadow-md space-y-2.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[#F4A62A] shrink-0 mt-0.5">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-white font-['Poppins',sans-serif] flex items-center gap-2">
+                  <span>Destination Capacity Insufficient</span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono font-semibold">
+                    Backup Stopped Safely
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-200 leading-relaxed font-['Inter',sans-serif]">
+                  {latestSession.capacityAssessment?.message ||
+                    `The selected backup requires approximately ${formatBytes(latestSession.bytesTotal)} of free space, but the destination drive '${latestSession.driveName || 'Removable Disk'}' currently has only ${formatBytes(primaryDrive?.freeBytes || 0)} available. To ensure data safety and prevent incomplete backups, Dero Vault cannot proceed until either additional space is freed or a larger destination is selected.`}
+                </p>
+                {latestSession.capacityAssessment?.fat32Violations && latestSession.capacityAssessment.fat32Violations.length > 0 && (
+                  <div className="mt-1 text-[11px] text-amber-300/90 font-mono">
+                    Filesystem Constraint: FAT32 cannot accommodate single files exceeding 4 GB ({latestSession.capacityAssessment.fat32Violations.map((v: any) => v.path).join(', ')}).
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setCapacityWarningDismissed(true)}
+              className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors shrink-0"
+              title="Dismiss Notice"
+            >
+              <XCircle className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1 border-t border-amber-500/20">
+            {onNavigateTab && (
+              <>
+                <button
+                  onClick={() => onNavigateTab('profiles')}
+                  className="px-3 py-1.5 bg-[#F4A62A] hover:bg-[#F6B54A] text-[#0D1B3D] rounded-lg text-xs font-bold transition-colors shadow-xs font-['Poppins',sans-serif]"
+                >
+                  Revise Backup Assignment
+                </button>
+                <button
+                  onClick={() => onNavigateTab('drives')}
+                  className="px-3 py-1.5 bg-[#162852] hover:bg-[#1E3466] text-slate-200 border border-[#1E3466] rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Select Another Drive
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Rescue & Migration Discovery Banner */}
       {activeDrives.some((d) => d.isConnected && d.hasRecoveryPackage) && (
@@ -562,6 +620,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="p-1 rounded bg-[#F4A62A]/15 border border-[#F4A62A]/30 text-[#F4A62A]">
                       <AlertTriangle className="w-4 h-4" />
                     </div>
+                  ) : latestSession.status === 'stopped_insufficient_space' ? (
+                    <div className="p-1 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
                   ) : (
                     <div className="p-1 rounded bg-rose-500/15 border border-rose-500/30 text-rose-400">
                       <ShieldAlert className="w-4 h-4" />
@@ -575,7 +637,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ? 'BACKUP HAD WARNINGS'
                         : latestSession.status === 'interrupted'
                         ? 'BACKUP INTERRUPTED'
-                        : 'BACKUP RESULT'}
+                        : latestSession.status === 'stopped_insufficient_space'
+                        ? 'STOPPED: INSUFFICIENT SPACE'
+                        : 'BACKUP FAILED'}
                     </h4>
                     <span className="text-[10px] text-slate-400">
                       {latestSession.endTime ? new Date(latestSession.endTime).toLocaleString() : 'Recently completed'}

@@ -44,10 +44,41 @@ export interface DeroVaultServerOptions {
   onEvent?: (eventType: string, data: any) => void;
 }
 
+function parseServerArgs() {
+  let port: number | undefined;
+  let host: string = process.env.HOST || '0.0.0.0';
+
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--port' || arg === '-p') {
+      const val = parseInt(args[i + 1], 10);
+      if (!isNaN(val)) port = val;
+    } else if (arg.startsWith('--port=')) {
+      const val = parseInt(arg.split('=')[1], 10);
+      if (!isNaN(val)) port = val;
+    } else if (arg === '--host' || arg === '-h') {
+      if (args[i + 1]) host = args[i + 1];
+    } else if (arg.startsWith('--host=')) {
+      host = arg.split('=')[1] || host;
+    }
+  }
+
+  return { port, host };
+}
+
 export async function createDeroVaultServer(customPort?: number, options?: DeroVaultServerOptions) {
   const app = express();
   const server = http.createServer(app);
-  const port = customPort || process.env.PORT || 3000;
+
+  const cliOptions = parseServerArgs();
+  const rawPort = customPort || cliOptions.port || (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined);
+  const nginxPort = process.env.NGINX_PORT ? parseInt(process.env.NGINX_PORT, 10) : 8080;
+  const defaultPort = process.env.DEFAULT_APP_PORT ? parseInt(process.env.DEFAULT_APP_PORT, 10) : 3000;
+
+  // Guard against colliding with Nginx reverse proxy port (8080)
+  const port = (rawPort && rawPort !== nginxPort) ? rawPort : defaultPort;
+  const host = cliOptions.host || '0.0.0.0';
 
   app.use(express.json());
 
@@ -1026,11 +1057,15 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     try {
       const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
-        server: { middlewareMode: true },
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR === 'true' ? false : { server },
+        },
         appType: 'spa',
       });
       app.use(vite.middlewares);
-    } catch {
+    } catch (viteErr: any) {
+      console.warn(`[Backend] Vite dev server error:`, viteErr?.message || viteErr);
       if (distPath) {
         console.log(`[Backend] Dev fallback: serving static frontend from: ${distPath}`);
         app.use(express.static(distPath));
@@ -1042,9 +1077,13 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     }
   }
 
-  return new Promise<http.Server>((resolve) => {
-    server.listen(port, () => {
-      console.log(`[Backend] [${new Date().toISOString()}] Server running on port ${port} — Your digital granary.`);
+  return new Promise<http.Server>((resolve, reject) => {
+    server.on('error', (err: any) => {
+      console.error(`[Backend] Fatal server listen error on ${host}:${port}:`, err);
+      reject(err);
+    });
+    server.listen(port, host, () => {
+      console.log(`[Backend] [${new Date().toISOString()}] Server running on http://${host}:${port} — Your digital granary.`);
       resolve(server);
     });
   });

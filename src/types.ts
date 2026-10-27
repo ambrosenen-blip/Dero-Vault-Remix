@@ -98,6 +98,7 @@ export interface BackupSession {
   reportPath?: string;
   txtReportPath?: string;
   reportSummary?: string;
+  capacityAssessment?: any;
 }
 
 export type ReminderFrequency = 'daily' | 'weekly' | 'monthly';
@@ -396,5 +397,7 @@ export interface DriveInspectionResult {
   error?: string;
   environmentResult?: EnvironmentDetectionResult;
   offlineInstallers?: OfflineInstallerPackage[];
+  isIncompleteBackup?: boolean;
+  incompleteReason?: string;
 }
 
