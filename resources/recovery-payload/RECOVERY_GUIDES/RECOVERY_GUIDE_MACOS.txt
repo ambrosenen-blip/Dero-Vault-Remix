@@ -1,0 +1,45 @@
+==============================================================================
+                     DERO VAULT™ — macOS OFFLINE RECOVERY GUIDE
+                    Publisher: Enen Digital Labs Co. Ltd
+                    Product: Dero Vault™ — Your Digital Granary
+==============================================================================
+
+Welcome to Dero Vault Rescue & Migration for macOS (Monterey, Ventura, Sonoma, Sequoia).
+This backup drive is 100% self-contained and allows you to restore your files
+without internet access on any replacement Apple Silicon (arm64) or Intel (x86_64) Mac.
+
+------------------------------------------------------------------------------
+METHOD 1: DIRECT FILE ACCESS (ZERO SOFTWARE REQUIRED)
+------------------------------------------------------------------------------
+All your protected files are stored in standard, non-proprietary formats:
+1. Open Finder on your Mac.
+2. Select the USB drive in the sidebar.
+3. Open the folder:
+   DERO_VAULT_BACKUP/CURRENT/
+4. You will see your folders (e.g., Documents, Desktop, Pictures) exactly as
+   they were organized on your original computer.
+5. Drag and drop any files or folders to your Mac.
+6. If you need previous revisions of edited files, open:
+   DERO_VAULT_BACKUP/VERSIONS/
+
+------------------------------------------------------------------------------
+METHOD 2: NATIVE LAUNCHER SCRIPT
+------------------------------------------------------------------------------
+1. In the root of this USB drive, double-click or run:
+   Rescue-macOS.command
+2. Or in Terminal, run:
+   sh "/Volumes/<DriveName>/Rescue-macOS.command"
+3. The interactive recovery portal will guide you through restoring your files
+   and automatically sanitize any Windows-specific filename characters (e.g.,
+   colons, asterisks, or reserved names) for macOS compatibility.
+
+------------------------------------------------------------------------------
+SAFETY & PRIVACY GUARANTEES
+------------------------------------------------------------------------------
+- Source Safe: Your backup files on this drive will NEVER be deleted or modified.
+- Non-Destructive: Conflicting existing files on the destination computer are
+  never overwritten; they are preserved with a " (restored)" suffix.
+- 100% Local: No internet connection is required. No telemetry or cloud syncing.
+
+Publisher Support: Enen Digital Labs Co. Ltd
+==============================================================================

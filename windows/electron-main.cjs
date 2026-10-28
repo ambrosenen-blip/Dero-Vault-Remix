@@ -447,19 +447,25 @@ function syncTrayState(reason) {
   // 1. If an active backup is running
   if (appState.activeBackup) {
     const b = appState.activeBackup;
-    if (b.filesProcessed !== undefined && b.totalFiles !== undefined) {
+    if (b.status === 'checking_capacity') {
+      newStatus = `Dero Vault — Checking destination capacity (${b.driveName || 'removable drive'})...`;
+    } else if (b.filesProcessed !== undefined && b.totalFiles !== undefined) {
       newStatus = `Dero Vault — Backing up ${b.driveName || 'removable drive'}: ${b.filesProcessed}/${b.totalFiles} (${b.progress || 0}%)...`;
     } else {
       newStatus = `Dero Vault — Backing up ${b.driveName || 'removable drive'}...`;
     }
   }
-  // 2. If an unregistered drive is pending registration
+  // 2. Transient status (e.g. stopped for insufficient capacity, interrupted, error)
+  else if (appState.transientStatus && Date.now() < appState.transientExpiry && !appState.pendingRegistrationDrive) {
+    newStatus = appState.transientStatus;
+  }
+  // 3. If an unregistered drive is pending registration
   // Requirement 6: Keep the registration prompt available until registered, dismissed, or physically removed.
   else if (appState.pendingRegistrationDrive) {
     const drive = appState.pendingRegistrationDrive;
     newStatus = `Dero Vault — New USB drive detected (${drive.driveLetter})`;
   }
-  // 3. If connected drives exist in the authoritative store
+  // 4. If connected drives exist in the authoritative store
   else if (connectedCount > 0) {
     const drives = Array.from(appState.connectedDrives.values());
     const regDrive = drives.find((d) => d.isRegistered);
@@ -476,10 +482,6 @@ function syncTrayState(reason) {
         newStatus = 'Dero Vault — Idle (Waiting for USB drive)';
       }
     }
-  }
-  // 4. Transient activity (only if within valid expiry AND no pending registration)
-  else if (appState.transientStatus && Date.now() < appState.transientExpiry && !appState.pendingRegistrationDrive) {
-    newStatus = appState.transientStatus;
   }
   // 5. Requirement 7: Return to IDLE only when no connected drives, no pending registration, no active backup
   else {
@@ -710,6 +712,73 @@ function subscribeToBackendEvents() {
   });
 }
 
+let lastTerminalSessionId = null;
+
+function handleTerminalBackupEvent(data, source) {
+  if (!data) return;
+  const sessionId = data.id || `${data.startTime}_${data.status}`;
+  if (lastTerminalSessionId === sessionId) {
+    console.log(`[Tray] [${new Date().toISOString()}] Terminal state for session ${sessionId} already handled; skipping duplicate.`);
+    return;
+  }
+  lastTerminalSessionId = sessionId;
+
+  console.log(`[Tray] [${new Date().toISOString()}] Handling terminal backup state via ${source}: ${data.status}`);
+  appState.activeBackup = null;
+
+  if (data.status === 'completed') {
+    appState.transientStatus = null;
+    syncTrayState('backup:completed');
+    showTrayNotification({
+      title: 'Dero Vault',
+      content: "✓ Today's work is safely backed up.",
+      type: 'info',
+    });
+  } else if (data.status === 'completed_with_warnings') {
+    appState.transientStatus = `Dero Vault — Backup completed with ${data.errors?.length || 0} warning(s)`;
+    appState.transientExpiry = Date.now() + 10000;
+    syncTrayState('backup:completed_with_warnings');
+    showTrayNotification({
+      title: 'Dero Vault',
+      content: `Backup completed with ${data.errors?.length || 0} warning(s).`,
+      type: 'warning',
+    });
+  } else if (data.status === 'stopped_insufficient_space') {
+    const req = data.capacityAssessment?.formattedRequired || 'more storage';
+    const avail = data.capacityAssessment?.formattedAvailable || 'available storage';
+    appState.transientStatus = `Dero Vault — Destination Capacity Insufficient (${data.driveName || 'USB drive'})`;
+    appState.transientExpiry = Date.now() + 15000;
+    syncTrayState('backup:stopped_insufficient_space');
+    showTrayNotification({
+      title: 'Dero Vault — Insufficient Storage',
+      content: `Backup stopped safely: Destination needs ${req} but only ${avail} is available. Zero files copied.`,
+      type: 'warning',
+    });
+  } else if (data.status === 'interrupted') {
+    appState.transientStatus = `Dero Vault — Backup interrupted (Drive disconnected)`;
+    appState.transientExpiry = Date.now() + 15000;
+    syncTrayState('backup:interrupted');
+    showTrayNotification({
+      title: 'Dero Vault — Backup Interrupted',
+      content: 'The backup drive was disconnected before copying finished.',
+      type: 'error',
+    });
+  } else if (data.status === 'failed' || data.status === 'incomplete' || data.status === 'cancelled') {
+    appState.transientStatus = `Dero Vault — Backup ${data.status}`;
+    appState.transientExpiry = Date.now() + 15000;
+    syncTrayState(`backup:${data.status}`);
+    showTrayNotification({
+      title: 'Dero Vault — Backup Failed',
+      content: data.errors?.[0]?.error || `The backup could not be completed (${data.status}).`,
+      type: 'error',
+    });
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('backup:complete', data);
+  }
+}
+
 function handleBackendStateChange(eventType, data) {
   console.log(`[Backend] [${new Date().toISOString()}] State change event received: ${eventType}`);
 
@@ -819,13 +888,9 @@ function handleBackendStateChange(eventType, data) {
       mainWindow.webContents.send('drive:disconnected', drive);
     }
   } else if ((eventType === 'backup:start' || eventType === 'backup:catchup') && data) {
-    const isTerminal = ['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space'].includes(data.status);
+    const isTerminal = ['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space', 'incomplete'].includes(data.status);
     if (isTerminal) {
-      appState.activeBackup = null;
-      syncTrayState(`backup:${data.status}`);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('backup:complete', data);
-      }
+      handleTerminalBackupEvent(data, eventType);
     } else {
       const totalFiles = (data.newFilesCount || 0) + (data.modifiedFilesCount || 0) || data.filesScanned || 0;
       const filesProcessed = (data.filesCopied || 0) + (data.filesSkipped || 0);
@@ -834,7 +899,7 @@ function handleBackendStateChange(eventType, data) {
         : (totalFiles > 0 ? Math.round((filesProcessed / totalFiles) * 100) : 0);
 
       appState.activeBackup = {
-        status: 'running',
+        status: data.status || 'running',
         driveName: data.driveName,
         filesProcessed,
         totalFiles,
@@ -846,26 +911,9 @@ function handleBackendStateChange(eventType, data) {
       }
     }
   } else if (eventType === 'backup:update' && data) {
-    const isTerminal = ['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space'].includes(data.status);
+    const isTerminal = ['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted', 'stopped_insufficient_space', 'incomplete'].includes(data.status);
     if (isTerminal) {
-      console.log(`[Tray] [${new Date().toISOString()}] Backup reached terminal state via update: ${data.status}`);
-      appState.activeBackup = null;
-      syncTrayState(`backup:${data.status}`);
-      if (data.status === 'completed' || data.status === 'completed_with_errors') {
-        showTrayNotification({
-          title: 'Dero Vault',
-          content: "✓ Today's work is safely backed up.",
-        });
-      } else if (data.status === 'interrupted' || data.status === 'failed') {
-        showTrayNotification({
-          title: 'Dero Vault',
-          content: "Backup interrupted or stopped.",
-          type: 'error',
-        });
-      }
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('backup:complete', data);
-      }
+      handleTerminalBackupEvent(data, 'backup:update');
     } else {
       const totalFiles = (data.newFilesCount || 0) + (data.modifiedFilesCount || 0) || data.filesScanned || 0;
       const filesProcessed = (data.filesCopied || 0) + (data.filesSkipped || 0);
@@ -874,7 +922,7 @@ function handleBackendStateChange(eventType, data) {
         : (totalFiles > 0 ? Math.round((filesProcessed / totalFiles) * 100) : 0);
 
       appState.activeBackup = {
-        status: 'running',
+        status: data.status || 'running',
         driveName: data.driveName,
         filesProcessed,
         totalFiles,
@@ -887,17 +935,7 @@ function handleBackendStateChange(eventType, data) {
       }
     }
   } else if (eventType === 'backup:complete' && data) {
-    console.log(`[Tray] [${new Date().toISOString()}] Backup complete event received for ${data.driveName || 'drive'}`);
-    appState.activeBackup = null;
-    syncTrayState('backup:complete');
-    showTrayNotification({
-      title: 'Dero Vault',
-      content: data.status === 'completed' ? "✓ Today's work is safely backed up." : "Backup finished with warnings.",
-    });
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('backup:complete', data);
-    }
+    handleTerminalBackupEvent(data, 'backup:complete');
   } else if (eventType === 'reminder:due' && data) {
     console.log(`[Notification] [${new Date().toISOString()}] Backup reminder due: ${data.message}`);
     showTrayNotification({

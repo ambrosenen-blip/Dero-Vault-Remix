@@ -1,0 +1,49 @@
+==============================================================================
+                    DERO VAULT™ — WINDOWS OFFLINE RECOVERY GUIDE
+                    Publisher: Enen Digital Labs Co. Ltd
+                    Product: Dero Vault™ — Your Digital Granary
+==============================================================================
+
+Welcome to Dero Vault Rescue & Migration for Windows 10 and 11.
+This backup drive is 100% self-contained and allows you to restore your files
+without internet access on any replacement or new computer.
+
+------------------------------------------------------------------------------
+METHOD 1: DIRECT FILE ACCESS (ZERO SOFTWARE REQUIRED)
+------------------------------------------------------------------------------
+All your protected files are stored in standard, non-proprietary formats:
+1. Open Windows File Explorer.
+2. Navigate to this USB drive.
+3. Open the folder:
+   DERO_VAULT_BACKUP\CURRENT\
+4. You will see your folders (e.g., Documents, Desktop, Pictures) exactly as
+   they were organized on your original computer.
+5. You can copy and paste any files directly to your new computer.
+6. If you need previous revisions of edited files, open:
+   DERO_VAULT_BACKUP\VERSIONS\
+
+------------------------------------------------------------------------------
+METHOD 2: GUIDED RECOVERY VIA DERO VAULT SETUP
+------------------------------------------------------------------------------
+If you want Dero Vault to automatically restore your files, map your user
+profile, verify cryptographic hashes, and resume automatic protection:
+1. In the root of this USB drive, double-click:
+   Rescue-Windows.bat
+2. Or run the verified offline installer located at:
+   DERO_VAULT_BACKUP\RECOVERY\INSTALLERS\WINDOWS_X64\DeroVault-Setup.exe
+3. Follow the setup wizard. Dero Vault will recognize this drive automatically
+   and open the "Rescue & Migration" workspace.
+4. Review your backed-up folders, select target destination directories,
+   and click "Restore My Office".
+5. All restored files are verified using SHA-256 to ensure byte-perfect integrity.
+
+------------------------------------------------------------------------------
+SAFETY & PRIVACY GUARANTEES
+------------------------------------------------------------------------------
+- Source Safe: Your backup files on this drive will NEVER be deleted or modified.
+- Non-Destructive: Conflicting existing files on the destination computer are
+  never overwritten; they are preserved with a " (restored)" suffix.
+- 100% Local: No internet connection is required. No telemetry or cloud syncing.
+
+Publisher Support: Enen Digital Labs Co. Ltd
+==============================================================================

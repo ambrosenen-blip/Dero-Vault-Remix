@@ -1,0 +1,81 @@
+{
+  "payloadVersion": "1.2.0",
+  "product": "Dero Vault™",
+  "publisher": "Enen Digital Labs Co. Ltd",
+  "releaseChannel": "production-official",
+  "sealedAt": "2026-10-28T16:15:51.691Z",
+  "totalPackagesCount": 7,
+  "totalSizeBytes": 3892266,
+  "packages": [
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "fileName": "DeroVault-Setup.exe",
+      "relativePath": "INSTALLERS/WINDOWS_X64/DeroVault-Setup.exe",
+      "sizeBytes": 2621765,
+      "sha256": "aca9c624accfba57cae0644521f654e901f4e554b7c2b21a1b292e204b3ff0a7",
+      "description": "Dero Vault Windows x64 Official Setup Installer",
+      "verifiedAt": "2026-10-28T16:15:51.679Z"
+    },
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "fileName": "DeroVault-Windows-x64.zip",
+      "relativePath": "INSTALLERS/WINDOWS_X64/DeroVault-Windows-x64.zip",
+      "sizeBytes": 1258403,
+      "sha256": "4dcce241b774fd6a20394e3d84e6b23584997bb85266788793cd6fd8cb14fcb6",
+      "description": "Dero Vault Windows x64 Portable Recovery Package",
+      "verifiedAt": "2026-10-28T16:15:51.688Z"
+    },
+    {
+      "platform": "darwin",
+      "arch": "universal",
+      "fileName": "DeroVault-macOS-Installer.command",
+      "relativePath": "INSTALLERS/MACOS/DeroVault-macOS-Installer.command",
+      "sizeBytes": 2184,
+      "sha256": "4b1f21b07857ded5e60f8a5d8acd9e58c632647f7a592785c959db7b524ffbb9",
+      "description": "Dero Vault macOS Universal Recovery Script (x64 / arm64)",
+      "verifiedAt": "2026-10-28T16:15:51.689Z"
+    },
+    {
+      "platform": "linux",
+      "arch": "x64",
+      "fileName": "DeroVault-Linux-Installer.sh",
+      "relativePath": "INSTALLERS/LINUX/DeroVault-Linux-Installer.sh",
+      "sizeBytes": 2431,
+      "sha256": "2735cb6f8329a5b7ad4c97cf73eaaf183bce67a9e6bd7c2e32e3cd8e951d1759",
+      "description": "Dero Vault Linux Recovery Tool (glibc 2.31+, x86_64)",
+      "verifiedAt": "2026-10-28T16:15:51.689Z"
+    },
+    {
+      "platform": "win32",
+      "arch": "all",
+      "fileName": "RECOVERY_GUIDE_WINDOWS.txt",
+      "relativePath": "RECOVERY_GUIDES/RECOVERY_GUIDE_WINDOWS.txt",
+      "sizeBytes": 2722,
+      "sha256": "4b608a380ec830602cc4d283c5213fcf86d5bc16c0a8be988ecf45bf2e31bc24",
+      "description": "Windows Offline Recovery Documentation",
+      "verifiedAt": "2026-10-28T16:15:51.690Z"
+    },
+    {
+      "platform": "darwin",
+      "arch": "all",
+      "fileName": "RECOVERY_GUIDE_MACOS.txt",
+      "relativePath": "RECOVERY_GUIDES/RECOVERY_GUIDE_MACOS.txt",
+      "sizeBytes": 2468,
+      "sha256": "d1feded3e7dab744cc31799148e1f9385059e1fae5ffc9dfc816adca00f63d79",
+      "description": "macOS Offline Recovery Documentation",
+      "verifiedAt": "2026-10-28T16:15:51.691Z"
+    },
+    {
+      "platform": "linux",
+      "arch": "all",
+      "fileName": "RECOVERY_GUIDE_LINUX.txt",
+      "relativePath": "RECOVERY_GUIDES/RECOVERY_GUIDE_LINUX.txt",
+      "sizeBytes": 2293,
+      "sha256": "c6ae35c5576dbf8bac852aca3f81cd689d29cebf9971ea259f8d51e021c14630",
+      "description": "Linux Offline Recovery Documentation",
+      "verifiedAt": "2026-10-28T16:15:51.691Z"
+    }
+  ]
+}

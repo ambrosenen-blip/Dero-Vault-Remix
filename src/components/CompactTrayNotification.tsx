@@ -378,6 +378,8 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
         const actionText =
           session.status === 'scanning'
             ? `Scanning source folders (${isTurbo ? 'Turbo' : 'Standard'} Mode)…`
+            : session.status === 'checking_capacity'
+            ? `Checking destination capacity (${isTurbo ? 'Turbo' : 'Standard'} Mode)…`
             : session.status === 'comparing'
             ? `Comparing against granary (${isTurbo ? 'Turbo' : 'Standard'} Mode)…`
             : session.status === 'copying'
@@ -389,6 +391,8 @@ export const CompactTrayNotification: React.FC<CompactTrayNotificationProps> = (
         const displayBadge =
           session.status === 'scanning'
             ? 'Scanning...'
+            : session.status === 'checking_capacity'
+            ? 'Capacity...'
             : session.status === 'comparing'
             ? 'Comparing...'
             : session.status === 'verifying'

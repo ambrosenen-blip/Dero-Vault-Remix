@@ -1,0 +1,42 @@
+==============================================================================
+                     DERO VAULT™ — Linux OFFLINE RECOVERY GUIDE
+                    Publisher: Enen Digital Labs Co. Ltd
+                    Product: Dero Vault™ — Your Digital Granary
+==============================================================================
+
+Welcome to Dero Vault Rescue & Migration for Linux (Ubuntu, Debian, Fedora, Arch, glibc 2.31+).
+This backup drive is 100% self-contained and allows you to restore your files
+without internet access on any x86_64 or aarch64 Linux installation.
+
+------------------------------------------------------------------------------
+METHOD 1: DIRECT FILE ACCESS (ZERO SOFTWARE REQUIRED)
+------------------------------------------------------------------------------
+All your protected files are stored in standard, non-proprietary formats:
+1. Open your desktop File Manager (Nautilus, Dolphin, Thunar, etc.).
+2. Navigate to the mounted USB drive.
+3. Open the directory:
+   DERO_VAULT_BACKUP/CURRENT/
+4. Copy any files or folders directly to your home directory (~/Documents, ~/Desktop, etc.).
+5. If you need previous revisions of edited files, open:
+   DERO_VAULT_BACKUP/VERSIONS/
+
+------------------------------------------------------------------------------
+METHOD 2: DESKTOP LAUNCHER / SHELL SCRIPT
+------------------------------------------------------------------------------
+1. In the root of this USB drive, double-click:
+   Rescue-Linux.desktop
+2. Or in a terminal, execute:
+   sh ./Rescue-Linux.sh
+3. The offline portal will guide you through directory selection, permission
+   retention, and SHA-256 integrity checks.
+
+------------------------------------------------------------------------------
+SAFETY & PRIVACY GUARANTEES
+------------------------------------------------------------------------------
+- Source Safe: Your backup files on this drive will NEVER be deleted or modified.
+- Non-Destructive: Conflicting existing files on the destination computer are
+  never overwritten; they are preserved with a " (restored)" suffix.
+- 100% Local: No internet connection is required. No telemetry or cloud syncing.
+
+Publisher Support: Enen Digital Labs Co. Ltd
+==============================================================================

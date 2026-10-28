@@ -16,6 +16,7 @@ import { FileScanner, ScannedFile, ScanError } from './fileScanner.js';
 import { ComparisonResult, FileComparison, PlannedFileCopy } from './fileComparison.js';
 import { BackupVerification } from './verification.js';
 import { CapacitySafetyService } from './capacitySafety.js';
+import { RecoveryManager } from './recoveryManager.js';
 
 export class BackupEngine extends EventEmitter {
   private db: LocalDatabase;
@@ -35,7 +36,7 @@ export class BackupEngine extends EventEmitter {
   public isRunning(): boolean {
     return (
       this.currentSession !== null &&
-      ['scanning', 'comparing', 'copying', 'verifying'].includes(this.currentSession.status)
+      ['scanning', 'checking_capacity', 'comparing', 'copying', 'verifying'].includes(this.currentSession.status)
     );
   }
 
@@ -245,7 +246,12 @@ export class BackupEngine extends EventEmitter {
     if (this.isCancelled) return;
 
     // Step 3: Comprehensive Preflight Capacity Assessment
+    session.status = 'checking_capacity';
+    this.db.saveBackupSession(session);
+    this.emit('session:update', session);
+
     const isTurbo = session.mode === 'turbo';
+    const missingRecoveryBytes = await RecoveryManager.getMissingPayloadBytes(destMountPath);
     const preflight = await CapacitySafetyService.assessPreflight({
       toCopy: comparison.toCopy,
       scannedFiles,
@@ -254,6 +260,7 @@ export class BackupEngine extends EventEmitter {
       drive,
       isTurbo,
       preserveVersions: profile.preserveVersions,
+      includeRecoveryPackageBytes: missingRecoveryBytes,
     });
 
     session.capacityAssessment = preflight;
@@ -261,6 +268,9 @@ export class BackupEngine extends EventEmitter {
     if (!preflight.canProceed) {
       session.status = 'stopped_insufficient_space';
       session.endTime = new Date().toISOString();
+      session.currentFile = undefined;
+      session.currentSpeedBps = 0;
+      session.estimatedSecondsRemaining = 0;
       session.errors.push({
         path: destMountPath,
         destPath: destMountPath,

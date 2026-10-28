@@ -110,7 +110,7 @@ export const TrayPopoverApp: React.FC = () => {
 
   const isBackingUp = Boolean(
     currentSession &&
-      ['scanning', 'comparing', 'copying', 'verifying'].includes(currentSession.status)
+      ['scanning', 'checking_capacity', 'comparing', 'copying', 'verifying'].includes(currentSession.status)
   );
 
   // Latest completed or finished session
@@ -223,6 +223,8 @@ export const TrayPopoverApp: React.FC = () => {
                 <span>
                   {currentSession.status === 'scanning'
                     ? 'Scanning folders…'
+                    : currentSession.status === 'checking_capacity'
+                    ? 'Checking drive capacity…'
                     : currentSession.status === 'comparing'
                     ? 'Comparing files…'
                     : currentSession.status === 'verifying'

@@ -49,6 +49,7 @@ export interface BackupProfile {
 export type BackupStatus =
   | 'idle'
   | 'scanning'
+  | 'checking_capacity'
   | 'comparing'
   | 'copying'
   | 'verifying'

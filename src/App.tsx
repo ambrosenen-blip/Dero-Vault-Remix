@@ -345,11 +345,21 @@ export default function App() {
             driveName: session.driveName,
           });
           ApiClient.getHistory().then((h) => setHistory(h || []));
-        } else if (['failed', 'interrupted', 'stopped_insufficient_space'].includes(session.status)) {
+        } else if (session.status === 'stopped_insufficient_space') {
+          const req = session.capacityAssessment?.formattedRequired || 'more space';
+          const avail = session.capacityAssessment?.formattedAvailable || 'available space';
+          setTrayNotification({
+            type: 'error',
+            title: 'Destination Capacity Insufficient',
+            message: `Backup stopped safely: Required ${req}, available ${avail}. Zero files transferred.`,
+            session,
+          });
+          ApiClient.getHistory().then((h) => setHistory(h || []));
+        } else if (['failed', 'interrupted', 'incomplete'].includes(session.status)) {
           setTrayNotification({
             type: 'error',
             title: session.status === 'interrupted' ? 'Backup Interrupted' : 'Backup Failed',
-            message: session.errors?.[0]?.error || 'Backup failed.',
+            message: session.errors?.[0]?.error || 'Backup could not be completed.',
             session,
           });
           ApiClient.getHistory().then((h) => setHistory(h || []));
@@ -361,27 +371,48 @@ export default function App() {
       },
       onBackupComplete: (session) => {
         setCurrentSession(session);
-        // TRAY-FIRST: Show "✓ Today's work is safely backed up."
-        setTrayNotification({
-          type: 'complete',
-          session,
-          driveName: session.driveName,
-        });
-
-        if ((window as any).electronAPI?.showNotification) {
-          (window as any).electronAPI.showNotification({
-            title: 'Dero Vault',
-            content: "✓ Today's work is safely backed up.",
-          });
-        }
-
         ApiClient.getHistory().then(setHistory);
 
-        // Auto-dismiss the completed toast after 10 seconds
-        if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
-        autoDismissTimerRef.current = setTimeout(() => {
-          setTrayNotification((prev) => (prev?.type === 'complete' ? null : prev));
-        }, 10000);
+        if (session.status === 'completed') {
+          setTrayNotification({
+            type: 'complete',
+            session,
+            driveName: session.driveName,
+          });
+          if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
+          autoDismissTimerRef.current = setTimeout(() => {
+            setTrayNotification((prev) => (prev?.type === 'complete' ? null : prev));
+          }, 10000);
+        } else if (session.status === 'completed_with_errors') {
+          setTrayNotification({
+            type: 'complete',
+            session,
+            driveName: session.driveName,
+          });
+        } else if (session.status === 'stopped_insufficient_space') {
+          const req = session.capacityAssessment?.formattedRequired || 'more space';
+          const avail = session.capacityAssessment?.formattedAvailable || 'available space';
+          setTrayNotification({
+            type: 'error',
+            title: 'Destination Capacity Insufficient',
+            message: `Backup stopped safely: Required ${req}, available ${avail}. Zero files transferred.`,
+            session,
+          });
+        } else if (session.status === 'interrupted') {
+          setTrayNotification({
+            type: 'error',
+            title: 'Backup Interrupted',
+            message: 'External drive was disconnected before backup finished.',
+            session,
+          });
+        } else {
+          setTrayNotification({
+            type: 'error',
+            title: 'Backup Failed',
+            message: session.errors?.[0]?.error || 'Backup could not be completed.',
+            session,
+          });
+        }
       },
       onRecoveryDetected: (drive) => {
         setTrayNotification({
@@ -668,7 +699,7 @@ export default function App() {
 
   const isBackingUp =
     currentSession !== null &&
-    ['scanning', 'comparing', 'copying', 'verifying'].includes(currentSession.status);
+    ['scanning', 'checking_capacity', 'comparing', 'copying', 'verifying'].includes(currentSession.status);
 
   return (
     <div className="min-h-screen bg-[#0A142E] text-slate-100 flex flex-col font-['Inter',sans-serif] selection:bg-[#F4A62A] selection:text-[#0D1B3D]">
