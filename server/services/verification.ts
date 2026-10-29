@@ -20,29 +20,54 @@ export interface VerificationResult {
 
 export class BackupVerification {
   /**
-   * Calculates SHA-256 checksum for a file using high-throughput streaming buffer.
+   * Calculates SHA-256 checksum for a file using high-throughput streaming buffer
+   * with retry capability for transient Windows file-locking (EBUSY/EPERM).
    */
-  public static async calculateChecksum(filePath: string, bufferSize: number = 256 * 1024): Promise<string> {
-    try {
-      const stat = await fs.promises.stat(filePath);
-      // For office-sized files (<= 4 MB), single-chunk read avoids multi-tick stream overhead while staying memory-bounded
-      if (stat.size <= 4 * 1024 * 1024) {
-        const buf = await fs.promises.readFile(filePath);
-        return crypto.createHash('sha256').update(buf).digest('hex');
-      }
-    } catch {}
+  public static async calculateChecksum(
+    filePath: string,
+    bufferSize: number = 256 * 1024,
+    retries: number = 2
+  ): Promise<string> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const stat = await fs.promises.stat(filePath);
+        // For office-sized files (<= 4 MB), single-chunk read avoids multi-tick stream overhead while staying memory-bounded
+        if (stat.size <= 4 * 1024 * 1024) {
+          const buf = await fs.promises.readFile(filePath);
+          return crypto.createHash('sha256').update(buf).digest('hex');
+        }
 
-    return new Promise((resolve, reject) => {
-      const hash = crypto.createHash('sha256');
-      const stream = fs.createReadStream(filePath, { highWaterMark: bufferSize });
-      stream.on('data', (chunk) => hash.update(chunk));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', (err) => reject(err));
-    });
+        return await new Promise<string>((resolve, reject) => {
+          let resolved = false;
+          const hash = crypto.createHash('sha256');
+          const stream = fs.createReadStream(filePath, { highWaterMark: bufferSize });
+          stream.on('data', (chunk) => hash.update(chunk));
+          stream.on('end', () => {
+            if (!resolved) {
+              resolved = true;
+              resolve(hash.digest('hex'));
+            }
+          });
+          stream.on('error', (err) => {
+            if (!resolved) {
+              resolved = true;
+              reject(err);
+            }
+          });
+        });
+      } catch (err: any) {
+        if (attempt < retries && (err.code === 'EBUSY' || err.code === 'EPERM')) {
+          await new Promise((r) => setTimeout(r, 60 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error(`Checksum calculation failed for ${filePath}`);
   }
 
   /**
-   * Verifies copied files against source files with bounded concurrency
+   * Verifies copied files against source files with bounded concurrency (safe for USB controllers)
    * and support for precomputed on-the-fly source hashes.
    */
   public static async verifyBatch(
@@ -55,8 +80,8 @@ export class BackupVerification {
     let checksumVerifiedCount = 0;
     let checkedCount = 0;
 
-    // Bounded parallel verification pool (up to 16 parallel checks)
-    const concurrency = Math.min(16, Math.max(2, copiedFiles.length));
+    // Bounded parallel verification pool: Safe for removable USB controllers (max 4 parallel checks)
+    const concurrency = Math.min(4, Math.max(1, copiedFiles.length));
     let nextIndex = 0;
 
     const worker = async () => {
@@ -120,7 +145,7 @@ export class BackupVerification {
         }
 
         checkedCount++;
-        if (onProgress && (checkedCount % 10 === 0 || checkedCount === copiedFiles.length)) {
+        if (onProgress && (checkedCount % 5 === 0 || checkedCount === copiedFiles.length)) {
           onProgress(checkedCount, copiedFiles.length);
         }
       }

@@ -100,13 +100,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
     ? backupProfiles.find((p) => p.driveStableId === primaryDrive.stableHardwareId)
     : null;
 
-  // Determine latest completed/recent session (from currentSession or history[0])
+  // Determine latest completed/recent session scoped to primary connected drive
+  const driveSpecificSession = primaryDrive
+    ? (currentSession && currentSession.driveStableId === primaryDrive.stableHardwareId
+        ? currentSession
+        : history.find((s) => s.driveStableId === primaryDrive.stableHardwareId) || null)
+    : (currentSession || (history.length > 0 ? history[0] : null));
+
   const latestSession: BackupSession | null =
-    currentSession && ['completed', 'completed_with_errors', 'failed', 'interrupted', 'stopped_insufficient_space'].includes(currentSession.status)
-      ? currentSession
-      : history && history.length > 0
-      ? history[0]
+    driveSpecificSession && ['completed', 'completed_with_errors', 'failed', 'interrupted', 'stopped_insufficient_space'].includes(driveSpecificSession.status)
+      ? driveSpecificSession
       : null;
+
+  // Show capacity warning banner on dashboard ONLY if it strictly belongs to the currently active/connected primary drive
+  const isWarningForCurrentDrive = Boolean(
+    latestSession &&
+    latestSession.status === 'stopped_insufficient_space' &&
+    primaryDrive &&
+    latestSession.driveStableId === primaryDrive.stableHardwareId
+  );
 
   // Compute live progress percentage
   let progressPercent = 0;
@@ -244,8 +256,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </header>
 
-      {/* Capacity Assessment Warning Banner */}
-      {latestSession && latestSession.status === 'stopped_insufficient_space' && !capacityWarningDismissed && (
+      {/* Capacity Assessment Warning Banner: strictly scoped to current primary drive */}
+      {isWarningForCurrentDrive && latestSession && !capacityWarningDismissed && (
         <div className="bg-[#1C1322] border border-amber-500/50 rounded-xl p-3.5 shadow-md space-y-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -261,7 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </h4>
                 <p className="text-xs text-slate-200 leading-relaxed font-['Inter',sans-serif]">
                   {latestSession.capacityAssessment?.message ||
-                    `The selected backup requires approximately ${formatBytes(latestSession.bytesTotal)} of free space, but the destination drive '${latestSession.driveName || 'Removable Disk'}' currently has only ${formatBytes(primaryDrive?.freeBytes || 0)} available. To ensure data safety and prevent incomplete backups, Dero Vault cannot proceed until either additional space is freed or a larger destination is selected.`}
+                    `The selected backup requires approximately ${latestSession.capacityAssessment?.formattedRequired || formatBytes(latestSession.bytesTotal)} of space, but the destination drive '${latestSession.driveName || 'Removable Disk'}' currently has only ${latestSession.capacityAssessment?.formattedAvailable || formatBytes(primaryDrive?.freeBytes || 0)} available. Zero files transferred.`}
                 </p>
                 {latestSession.capacityAssessment?.fat32Violations && latestSession.capacityAssessment.fat32Violations.length > 0 && (
                   <div className="mt-1 text-[11px] text-amber-300/90 font-mono">
@@ -631,10 +643,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   )}
                   <div>
                     <h4 className="text-xs font-bold font-['Poppins',sans-serif] text-white">
-                      {latestSession.status === 'completed'
+                      {latestSession.status === 'completed' && latestSession.isVerified
                         ? 'LATEST BACKUP VERIFIED ✓'
-                        : latestSession.status === 'completed_with_errors'
-                        ? 'BACKUP HAD WARNINGS'
+                        : latestSession.status === 'incomplete' || latestSession.status === 'completed_with_errors'
+                        ? 'BACKUP INCOMPLETE / UNVERIFIED'
                         : latestSession.status === 'interrupted'
                         ? 'BACKUP INTERRUPTED'
                         : latestSession.status === 'stopped_insufficient_space'

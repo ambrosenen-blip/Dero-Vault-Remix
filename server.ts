@@ -417,6 +417,63 @@ export async function createDeroVaultServer(customPort?: number, options?: DeroV
     res.json({ profiles });
   });
 
+  // Validate a folder path for addition to a backup profile
+  app.post('/api/folders/validate', (req: Request, res: Response) => {
+    const rawPath = req.body?.folderPath || req.body?.path;
+    if (typeof rawPath !== 'string' || !rawPath.trim()) {
+      return res.status(400).json({ valid: false, error: 'Folder path cannot be empty.' });
+    }
+
+    // Clean whitespace and any accidental surrounding quotes
+    const cleanPath = rawPath.trim().replace(/^["']+|["']+$/g, '').trim();
+
+    // Verify path is absolute
+    const isWinAbsolute = /^[a-zA-Z]:[\\/]/.test(cleanPath);
+    const isPosixAbsolute = cleanPath.startsWith('/');
+    if (!isWinAbsolute && !isPosixAbsolute) {
+      return res.status(400).json({
+        valid: false,
+        error: 'Please enter a full absolute folder path (e.g. C:\\Users\\User\\Documents or D:\\Work).',
+      });
+    }
+
+    try {
+      if (!fs.existsSync(cleanPath)) {
+        return res.status(400).json({
+          valid: false,
+          error: `Folder does not exist or is currently inaccessible: "${cleanPath}"`,
+        });
+      }
+
+      const stat = fs.statSync(cleanPath);
+      if (!stat.isDirectory()) {
+        return res.status(400).json({
+          valid: false,
+          error: `The specified path is a file, not a directory: "${cleanPath}"`,
+        });
+      }
+
+      fs.accessSync(cleanPath, fs.constants.R_OK);
+
+      let fileCount = 0;
+      try {
+        fileCount = fs.readdirSync(cleanPath).length;
+      } catch {}
+
+      return res.json({
+        valid: true,
+        path: cleanPath,
+        name: path.basename(cleanPath) || cleanPath,
+        fileCount,
+      });
+    } catch (err: any) {
+      return res.status(400).json({
+        valid: false,
+        error: `Cannot access folder: ${err.message || 'Permission denied'}`,
+      });
+    }
+  });
+
   // Register a drive with automatic recovery launcher provisioning
   app.post('/api/drives/register', async (req: Request, res: Response) => {
     const { stableHardwareId, friendlyName, sourceFolders, autoBackupEnabled, verifyBackups, preserveVersions } = req.body;

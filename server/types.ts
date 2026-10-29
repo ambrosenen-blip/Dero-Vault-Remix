@@ -55,6 +55,7 @@ export type BackupStatus =
   | 'verifying'
   | 'completed'
   | 'completed_with_errors'
+  | 'incomplete'
   | 'interrupted'
   | 'failed'
   | 'stopped_insufficient_space'
@@ -108,6 +109,23 @@ export interface BackupSession {
   txtReportPath?: string;
   reportSummary?: string;
   capacityAssessment?: any;
+  reconciliation?: ReconciliationReport;
+}
+
+export interface ReconciliationReport {
+  sessionId: string;
+  driveName: string;
+  driveLetter: string;
+  timestamp: string;
+  totalEligible: number;
+  successfullyCopiedAndVerified: number;
+  unchangedFilesPreserved: number;
+  skippedFiles: { path: string; reason: string }[];
+  failedWrites: { path: string; destPath: string; error: string }[];
+  missingDestinations: { path: string; destPath: string; error: string }[];
+  checksumMismatches: { path: string; destPath: string; error: string }[];
+  scanErrors: { path: string; error: string }[];
+  isFullyReconciled: boolean;
 }
 
 export type ReminderFrequency = 'daily' | 'weekly' | 'monthly';

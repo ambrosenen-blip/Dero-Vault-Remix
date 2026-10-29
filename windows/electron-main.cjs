@@ -726,7 +726,7 @@ function handleTerminalBackupEvent(data, source) {
   console.log(`[Tray] [${new Date().toISOString()}] Handling terminal backup state via ${source}: ${data.status}`);
   appState.activeBackup = null;
 
-  if (data.status === 'completed') {
+  if (data.status === 'completed' && data.isVerified) {
     appState.transientStatus = null;
     syncTrayState('backup:completed');
     showTrayNotification({
@@ -734,14 +734,23 @@ function handleTerminalBackupEvent(data, source) {
       content: "✓ Today's work is safely backed up.",
       type: 'info',
     });
-  } else if (data.status === 'completed_with_warnings') {
-    appState.transientStatus = `Dero Vault — Backup completed with ${data.errors?.length || 0} warning(s)`;
-    appState.transientExpiry = Date.now() + 10000;
-    syncTrayState('backup:completed_with_warnings');
+  } else if (data.status === 'incomplete' || data.status === 'completed_with_errors' || data.status === 'completed_with_warnings' || (data.status === 'completed' && !data.isVerified)) {
+    const failCount = data.errors?.length || data.filesFailed || 1;
+    appState.transientStatus = `Dero Vault — Backup incomplete (${failCount} unverified or failed)`;
+    appState.transientExpiry = Date.now() + 15000;
+    syncTrayState('backup:incomplete');
     showTrayNotification({
-      title: 'Dero Vault',
-      content: `Backup completed with ${data.errors?.length || 0} warning(s).`,
+      title: 'Dero Vault — Backup Incomplete',
+      content: `Backup finished with ${failCount} unverified or missing file(s). Data integrity not verified.`,
       type: 'warning',
+      onClick: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('app:expand');
+        }
+      },
     });
   } else if (data.status === 'stopped_insufficient_space') {
     const req = data.capacityAssessment?.formattedRequired || 'more storage';
@@ -753,6 +762,14 @@ function handleTerminalBackupEvent(data, source) {
       title: 'Dero Vault — Insufficient Storage',
       content: `Backup stopped safely: Destination needs ${req} but only ${avail} is available. Zero files copied.`,
       type: 'warning',
+      onClick: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('app:expand');
+        }
+      },
     });
   } else if (data.status === 'interrupted') {
     appState.transientStatus = `Dero Vault — Backup interrupted (Drive disconnected)`;
@@ -763,7 +780,7 @@ function handleTerminalBackupEvent(data, source) {
       content: 'The backup drive was disconnected before copying finished.',
       type: 'error',
     });
-  } else if (data.status === 'failed' || data.status === 'incomplete' || data.status === 'cancelled') {
+  } else if (data.status === 'failed' || data.status === 'cancelled') {
     appState.transientStatus = `Dero Vault — Backup ${data.status}`;
     appState.transientExpiry = Date.now() + 15000;
     syncTrayState(`backup:${data.status}`);

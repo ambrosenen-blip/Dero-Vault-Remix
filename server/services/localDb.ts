@@ -75,6 +75,7 @@ export class LocalDatabase {
     this.logFilePath = path.join(logsDir, 'dero_vault.log');
 
     this.data = this.loadDatabase();
+    this.auditRegistrationsAndProfiles();
   }
 
   private checkInstallerConsent(settings: AppSettings): boolean {
@@ -401,6 +402,42 @@ export class LocalDatabase {
     this.schedulePersist();
     this.log('info', 'BackupProfile', `Updated profile for drive ${driveStableId}`);
     return updated;
+  }
+
+  /**
+   * C5: Audits existing registered drives and backup profiles for identity integrity.
+   * Ensures every registered drive has an isolated profile and repairs missing associations
+   * without deleting user data.
+   */
+  public auditRegistrationsAndProfiles(): { valid: boolean; issues: string[]; repaired: number } {
+    const issues: string[] = [];
+    let repaired = 0;
+
+    for (const [stableId, drive] of Object.entries(this.data.registeredDrives)) {
+      if (!this.data.backupProfiles[stableId]) {
+        issues.push(`Registered drive "${drive.friendlyName || drive.volumeLabel}" (${stableId}) lacked associated profile. Reconstructed isolated profile.`);
+        this.data.backupProfiles[stableId] = {
+          id: `prof_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          driveStableId: stableId,
+          friendlyName: drive.friendlyName || drive.volumeLabel || 'Backup Drive',
+          sourceFolders: [path.join(process.env.USERPROFILE || process.env.HOME || '/home', 'Documents')],
+          destinationFolder: 'DERO_VAULT_BACKUP',
+          autoBackupEnabled: true,
+          verifyBackups: true,
+          preserveVersions: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        repaired++;
+      }
+    }
+
+    if (repaired > 0) {
+      this.schedulePersist();
+      this.log('warn', 'DatabaseAudit', `Audited database registrations: repaired ${repaired} missing profile link(s).`);
+    }
+
+    return { valid: issues.length === 0, issues, repaired };
   }
 
   // --- History & Sessions ---

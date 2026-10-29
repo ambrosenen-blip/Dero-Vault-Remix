@@ -235,16 +235,30 @@ export class DriveDetector extends EventEmitter {
     }
 
     // 2. State reconciliation and event emission
-    // Match identity continuity: if a drive in detectedNow matches an existing active drive
-    // by volumeSerial or driveLetter, preserve the existing stableHardwareId.
+    // Strict Physical Hardware & Volume Isolation:
+    // Match identity continuity ONLY when genuine stable identifiers match:
+    // - Exact stableHardwareId match
+    // - OR matching non-empty physical serial AND volume serial
+    // - OR matching non-empty, non-UNKNOWN volume serial
+    // NEVER match across devices based on volatile drive letters or generic volume labels.
     const reconciledDrives = new Map<string, RemovableDrive>();
     for (const [stableId, drive] of detectedNow.entries()) {
       let finalStableId = stableId;
       for (const [existingId, existingDrive] of this.activeDrives.entries()) {
-        if (
-          (drive.volumeSerial && drive.volumeSerial !== 'UNKNOWN' && existingDrive.volumeSerial === drive.volumeSerial) ||
-          (drive.driveLetter && existingDrive.driveLetter === drive.driveLetter)
-        ) {
+        const exactIdMatch = existingId === stableId;
+        const physMatch = Boolean(
+          drive.physicalSerial &&
+          drive.physicalSerial !== 'UNKNOWN' &&
+          existingDrive.physicalSerial === drive.physicalSerial
+        );
+        const volMatch = Boolean(
+          drive.volumeSerial &&
+          drive.volumeSerial !== 'UNKNOWN' &&
+          drive.volumeSerial.length >= 4 &&
+          existingDrive.volumeSerial === drive.volumeSerial
+        );
+
+        if (exactIdMatch || (physMatch && volMatch) || (volMatch && !drive.physicalSerial && !existingDrive.physicalSerial)) {
           finalStableId = existingId;
           drive.stableHardwareId = existingId;
           drive.id = existingDrive.id;
@@ -374,12 +388,6 @@ export class DriveDetector extends EventEmitter {
     const targetLower = stableId.toLowerCase();
     for (const [id, d] of this.activeDrives.entries()) {
       if (id.toLowerCase() === targetLower) return d;
-    }
-
-    for (const d of this.activeDrives.values()) {
-      if (d.driveLetter && stableId.toUpperCase().includes(d.driveLetter.replace(/[^a-zA-Z]/g, '').toUpperCase())) {
-        return d;
-      }
     }
 
     return undefined;

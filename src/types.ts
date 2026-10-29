@@ -52,6 +52,7 @@ export type BackupStatus =
   | 'verifying'
   | 'completed'
   | 'completed_with_errors'
+  | 'incomplete'
   | 'interrupted'
   | 'failed'
   | 'stopped_insufficient_space'

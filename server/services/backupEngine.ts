@@ -332,11 +332,12 @@ export class BackupEngine extends EventEmitter {
     };
 
     // Concurrency pipeline selection:
-    // If Turbo mode: bounded adaptive parallel workers (up to 16 for small/mixed files, 4 for large files)
+    // Safe for removable USB media controllers:
+    // If Turbo mode: bounded adaptive parallel workers (up to 4 for small/mixed files, 2 for large files)
     // If Standard mode: strictly conservative single sequential worker (concurrency = 1)
     const hasLargeFiles = comparison.toCopy.some((item) => item.size > 30 * 1024 * 1024);
     const concurrency = isTurbo
-      ? (hasLargeFiles ? 4 : Math.min(16, Math.max(4, comparison.toCopy.length)))
+      ? (hasLargeFiles ? 2 : Math.min(4, Math.max(1, comparison.toCopy.length)))
       : 1;
 
     let nextItemIndex = 0;
@@ -446,8 +447,16 @@ export class BackupEngine extends EventEmitter {
           // 4. Atomically promote staged file to destination path
           await fs.promises.rename(stagingPath, item.destinationPath);
 
+          // 5. Post-promotion confirmation: Verify destination actually exists and size matches
+          const postStat = await fs.promises.stat(item.destinationPath);
+          if (postStat.size !== item.size) {
+            throw new Error(
+              `Promotion verification failed: destination file size ${postStat.size} does not match expected ${item.size}`
+            );
+          }
+
           successfullyCopied.push(item);
-          session.filesCopied++;
+          session.filesCopied = successfullyCopied.length;
         } catch (copyErr: any) {
           // If copy failed or drive disconnected, clean up incomplete staging file
           try {
@@ -549,7 +558,6 @@ export class BackupEngine extends EventEmitter {
           precomputedHashes
         );
 
-        session.isVerified = verifyResult.isVerified && session.errors.length === 0;
         if (!verifyResult.isVerified) {
           for (const f of verifyResult.failures) {
             session.errors.push({
@@ -561,22 +569,61 @@ export class BackupEngine extends EventEmitter {
             session.filesFailed++;
           }
         }
+        // Authoritative invariant: filesCopied strictly reflects ONLY files that passed verification
+        session.filesCopied = verifyResult.totalVerified;
+        session.isVerified = verifyResult.isVerified && session.errors.length === 0;
         session.verificationNotes = `Verified ${verifyResult.totalVerified} files (${verifyResult.checksumVerifiedCount} with SHA-256).`;
       } catch (verErr: any) {
         session.isVerified = false;
+        session.filesCopied = 0;
         session.verificationNotes = `Verification check error: ${verErr.message}`;
       }
     } else {
       session.isVerified = successfullyCopied.length > 0 && session.errors.length === 0;
+      session.filesCopied = successfullyCopied.length;
       session.verificationNotes = 'Skipped checksum verification (0 new files or configured off).';
     }
 
-    // Step 6: Generate Backup Report on Destination Drive
+    // Step 6: Generate Full Reconciliation Report & Determine Session Status
     session.endTime = new Date().toISOString();
-    const hasUnresolvedIssues = session.errors.length > 0 || session.filesFailed > 0 || !session.isVerified;
+
+    const failedWrites = session.errors.filter(
+      (e) => !e.error.includes('checksum') && !e.error.includes('exist after copy')
+    );
+    const missingDestinations = session.errors.filter((e) => e.error.includes('exist after copy'));
+    const checksumMismatches = session.errors.filter((e) => e.error.includes('checksum'));
+
+    const reconciliation = {
+      sessionId: session.id,
+      driveName: session.driveName,
+      driveLetter: session.driveLetter,
+      timestamp: session.endTime,
+      totalEligible: scannedFiles.length,
+      successfullyCopiedAndVerified: session.filesCopied,
+      unchangedFilesPreserved: comparison.skipped.length,
+      skippedFiles: comparison.skipped.map((s) => ({
+        path: s.fullPath,
+        reason: 'Unchanged content verified on destination',
+      })),
+      failedWrites,
+      missingDestinations,
+      checksumMismatches,
+      scanErrors: scanErrors.map((e) => ({ path: e.path, error: e.error })),
+      isFullyReconciled:
+        session.errors.length === 0 &&
+        session.filesCopied + comparison.skipped.length === scannedFiles.length,
+    };
+    session.reconciliation = reconciliation;
+
+    const hasUnresolvedIssues =
+      session.errors.length > 0 ||
+      session.filesFailed > 0 ||
+      !session.isVerified ||
+      !reconciliation.isFullyReconciled;
+
     if (hasUnresolvedIssues) {
       session.isVerified = false;
-      session.status = (session.filesCopied === 0 && comparison.toCopy.length > 0) ? 'failed' : 'completed_with_errors';
+      session.status = session.filesCopied === 0 ? 'failed' : 'incomplete';
     } else {
       session.status = 'completed';
       session.isVerified = true;
@@ -607,17 +654,24 @@ export class BackupEngine extends EventEmitter {
   ): Promise<{ sha256Hex: string }> {
     try {
       const stat = await fs.promises.stat(sourcePath);
-      // For office-sized files (<= 4 MB), direct bounded buffer read/write eliminates multi-tick stream pipeline latency
+      // For office-sized files (<= 4 MB), direct bounded buffer read/write with fsync guarantees media persistence
       if (stat.size <= 4 * 1024 * 1024) {
         const buf = await fs.promises.readFile(sourcePath);
         const sha256Hex = calculateHash ? crypto.createHash('sha256').update(buf).digest('hex') : '';
-        await fs.promises.writeFile(destPath, buf);
+        const handle = await fs.promises.open(destPath, 'w');
+        try {
+          await handle.writeFile(buf);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
         onChunk(buf.length);
         return { sha256Hex };
       }
     } catch {}
 
     return new Promise((resolve, reject) => {
+      let settled = false;
       const hash = calculateHash ? crypto.createHash('sha256') : null;
       const readStream = fs.createReadStream(sourcePath, { highWaterMark: 512 * 1024 });
       const writeStream = fs.createWriteStream(destPath, { highWaterMark: 512 * 1024 });
@@ -627,18 +681,32 @@ export class BackupEngine extends EventEmitter {
         onChunk(chunk.length);
       });
 
-      readStream.on('error', (err) => {
+      const handleErr = (err: any) => {
+        if (settled) return;
+        settled = true;
+        readStream.destroy();
         writeStream.destroy();
         reject(err);
-      });
+      };
 
-      writeStream.on('error', (err) => {
-        readStream.destroy();
-        reject(err);
-      });
+      readStream.on('error', handleErr);
+      writeStream.on('error', handleErr);
 
-      writeStream.on('finish', () => {
-        resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
+      // Must wait for 'close' (not just 'finish') to ensure Windows releases the underlying file descriptor
+      writeStream.on('close', async () => {
+        if (settled) return;
+        settled = true;
+        try {
+          // Explicit flush to non-volatile USB media
+          try {
+            const handle = await fs.promises.open(destPath, 'r+');
+            await handle.sync();
+            await handle.close();
+          } catch {}
+          resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
+        } catch (syncErr) {
+          reject(syncErr);
+        }
       });
 
       readStream.pipe(writeStream);
@@ -647,7 +715,7 @@ export class BackupEngine extends EventEmitter {
 
   /**
    * Standard conservative copy pipeline: strictly sequential, 64KB buffers, direct streaming,
-   * full SHA-256 calculation for destination verification.
+   * full SHA-256 calculation for destination verification with media flush.
    */
   private async copyFileStreamedStandard(
     sourcePath: string,
@@ -656,6 +724,7 @@ export class BackupEngine extends EventEmitter {
     calculateHash: boolean = true
   ): Promise<{ sha256Hex: string }> {
     return new Promise((resolve, reject) => {
+      let settled = false;
       const hash = calculateHash ? crypto.createHash('sha256') : null;
       const readStream = fs.createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
       const writeStream = fs.createWriteStream(destPath, { highWaterMark: 64 * 1024 });
@@ -665,18 +734,30 @@ export class BackupEngine extends EventEmitter {
         onChunk(chunk.length);
       });
 
-      readStream.on('error', (err) => {
+      const handleErr = (err: any) => {
+        if (settled) return;
+        settled = true;
+        readStream.destroy();
         writeStream.destroy();
         reject(err);
-      });
+      };
 
-      writeStream.on('error', (err) => {
-        readStream.destroy();
-        reject(err);
-      });
+      readStream.on('error', handleErr);
+      writeStream.on('error', handleErr);
 
-      writeStream.on('finish', () => {
-        resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
+      writeStream.on('close', async () => {
+        if (settled) return;
+        settled = true;
+        try {
+          try {
+            const handle = await fs.promises.open(destPath, 'r+');
+            await handle.sync();
+            await handle.close();
+          } catch {}
+          resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
+        } catch (syncErr) {
+          reject(syncErr);
+        }
       });
 
       readStream.pipe(writeStream);
@@ -751,6 +832,17 @@ export class BackupEngine extends EventEmitter {
         `Files Skipped:    ${session.filesSkipped}`,
         `Files Failed:     ${session.filesFailed}`,
         `Data Transferred: ${this.formatBytes(session.bytesTransferred)}`,
+        '-----------------------------------------------------',
+        '              RECONCILIATION AUDIT                   ',
+        '-----------------------------------------------------',
+        `Total Eligible Source Files:   ${session.reconciliation?.totalEligible ?? session.filesScanned}`,
+        `Successfully Verified Files:   ${session.filesCopied}`,
+        `Unchanged Files Preserved:     ${session.filesSkipped}`,
+        `Failed Copy Writes:            ${session.reconciliation?.failedWrites?.length ?? 0}`,
+        `Missing Destination Files:     ${session.reconciliation?.missingDestinations?.length ?? 0}`,
+        `SHA-256 Checksum Mismatches:   ${session.reconciliation?.checksumMismatches?.length ?? 0}`,
+        `Scan / Enumeration Errors:     ${session.reconciliation?.scanErrors?.length ?? 0}`,
+        `Full Reconciliation Status:    ${session.reconciliation?.isFullyReconciled ? 'RECONCILED 100% ✓' : 'INTEGRITY DISCREPANCY DETECTED ⚠'}`,
         '-----------------------------------------------------',
         session.errors.length > 0
           ? `ERRORS (${session.errors.length}):\n` +

@@ -32,8 +32,10 @@
     "test:reconciliation": "tsx scripts/test-reconciliation-suite.ts",
     "test:capacity": "tsx scripts/test-capacity-safety.ts",
     "test:unified": "tsx scripts/test-unified-status-recovery-payload.ts",
+    "test:isolation": "tsx scripts/test-capacity-profile-drive-isolation.ts",
+    "test:integrity": "tsx scripts/test-backup-integrity-remediation.ts",
     "payload:prepare": "tsx scripts/prepare-recovery-payload.ts",
-    "test": "tsx scripts/test-reconciliation-suite.ts && tsx scripts/test-rescue-migration.ts && tsx scripts/test-startup-patrol.ts && tsx scripts/test-capacity-safety.ts && tsx scripts/test-unified-status-recovery-payload.ts"
+    "test": "tsx scripts/test-reconciliation-suite.ts && tsx scripts/test-rescue-migration.ts && tsx scripts/test-startup-patrol.ts && tsx scripts/test-capacity-safety.ts && tsx scripts/test-unified-status-recovery-payload.ts && tsx scripts/test-capacity-profile-drive-isolation.ts && tsx scripts/test-backup-integrity-remediation.ts"
   },
   "build": {
     "appId": "com.derovault.app",

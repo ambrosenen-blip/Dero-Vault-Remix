@@ -34,6 +34,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { SystemTrayMenu } from './components/SystemTrayMenu';
 import { CompactTrayNotification, TrayNotificationState } from './components/CompactTrayNotification';
 import { DownloadModal } from './components/DownloadModal';
+import { CapacityWarningModal } from './components/CapacityWarningModal';
 import { Shield, HardDrive, Maximize2, Settings, History, CheckCircle2, Download } from 'lucide-react';
 import { DeroGranaryEmblem, DeroWordmark, DeroAppIcon, EnenDigitalLabsLogo } from './components/BrandLogo';
 
@@ -75,6 +76,8 @@ export default function App() {
   const [unregisteredModalDrive, setUnregisteredModalDrive] = useState<RemovableDrive | null>(null);
   const [registerModalDrive, setRegisterModalDrive] = useState<RemovableDrive | null>(null);
   const [selectedReportSession, setSelectedReportSession] = useState<BackupSession | null>(null);
+  const [unresolvedCapacitySession, setUnresolvedCapacitySession] = useState<BackupSession | null>(null);
+  const [profileTargetDriveStableId, setProfileTargetDriveStableId] = useState<string | undefined>(undefined);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
 
@@ -328,6 +331,7 @@ export default function App() {
       },
       onBackupStart: (session) => {
         setCurrentSession(session);
+        setUnresolvedCapacitySession(null);
         // TRAY-FIRST: Do NOT open full app or force dashboard switch.
         // Display compact live progress in tray notification.
         setTrayNotification({
@@ -348,6 +352,7 @@ export default function App() {
         } else if (session.status === 'stopped_insufficient_space') {
           const req = session.capacityAssessment?.formattedRequired || 'more space';
           const avail = session.capacityAssessment?.formattedAvailable || 'available space';
+          setUnresolvedCapacitySession(session);
           setTrayNotification({
             type: 'error',
             title: 'Destination Capacity Insufficient',
@@ -392,6 +397,7 @@ export default function App() {
         } else if (session.status === 'stopped_insufficient_space') {
           const req = session.capacityAssessment?.formattedRequired || 'more space';
           const avail = session.capacityAssessment?.formattedAvailable || 'available space';
+          setUnresolvedCapacitySession(session);
           setTrayNotification({
             type: 'error',
             title: 'Destination Capacity Insufficient',
@@ -610,16 +616,17 @@ export default function App() {
     }
   };
 
-  const handleUpdateProfile = async (driveStableId: string, updates: Partial<BackupProfile>) => {
+  const handleUpdateProfile = async (driveStableId: string, updates: Partial<BackupProfile>): Promise<void> => {
     try {
       await ApiClient.updateDrive(driveStableId, updates);
-      refreshAll();
+      await refreshAll();
     } catch (err: any) {
       setTrayNotification({
         type: 'error',
         title: 'Profile Update Failed',
         message: err.message || 'Could not update profile.',
       });
+      throw err;
     }
   };
 
@@ -786,6 +793,7 @@ export default function App() {
                 backupProfiles={backupProfiles}
                 registeredDrives={registeredDrives}
                 onUpdateProfile={handleUpdateProfile}
+                initialDriveStableId={profileTargetDriveStableId}
               />
             )}
 
@@ -1014,6 +1022,23 @@ export default function App() {
         isOpen={isDownloadOpen}
         onClose={() => setIsDownloadOpen(false)}
       />
+
+      {/* Modal 6: Prominent Destination Capacity Warning Modal (Workstream A) */}
+      {unresolvedCapacitySession && (
+        <CapacityWarningModal
+          session={unresolvedCapacitySession}
+          onDismiss={() => setUnresolvedCapacitySession(null)}
+          onReviseAssignment={(driveStableId) => {
+            setUnresolvedCapacitySession(null);
+            setProfileTargetDriveStableId(driveStableId);
+            setCurrentTab('profiles');
+          }}
+          onSelectAnotherDrive={() => {
+            setUnresolvedCapacitySession(null);
+            setCurrentTab('drives');
+          }}
+        />
+      )}
     </div>
   );
 }

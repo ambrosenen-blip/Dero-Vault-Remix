@@ -314,8 +314,37 @@ export const TrayPopoverApp: React.FC = () => {
               </button>
             )}
           </div>
-        ) : latestFinishedSession && ['completed', 'completed_with_errors'].includes(latestFinishedSession.status) && !connectedUnregistered.length ? (
-          /* STATE E: BACKUP COMPLETED */
+        ) : latestFinishedSession && ['incomplete', 'completed_with_errors'].includes(latestFinishedSession.status) && !connectedUnregistered.length ? (
+          /* STATE E-1: BACKUP INCOMPLETE / WARNINGS */
+          <div className="bg-[#0D1B3D] border border-amber-500/40 rounded-xl p-3.5 space-y-2.5 text-xs">
+            <div className="flex items-center gap-2 text-amber-400 font-bold">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>Backup Incomplete (Integrity Warnings)</span>
+            </div>
+            <p className="text-[11px] text-slate-300">
+              {latestFinishedSession.errors?.length || latestFinishedSession.filesFailed || 1} file(s) failed or could not be verified. Some expected files may be missing.
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#081126] p-2 rounded border border-[#1E3466]">
+              <div>
+                <span className="text-slate-400 block text-[10px]">Verified Files</span>
+                <span className="font-bold text-amber-300 font-mono">{latestFinishedSession.filesCopied} files</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Failed / Unverified</span>
+                <span className="font-bold text-rose-400 font-mono">{latestFinishedSession.filesFailed} files</span>
+              </div>
+            </div>
+            <div className="pt-1">
+              <button
+                onClick={handleOpenFullApp}
+                className="w-full py-1.5 px-3 bg-[#162852] hover:bg-[#1E3466] text-[#F4A62A] rounded font-semibold text-[11px] transition-colors"
+              >
+                Review Report in Dero Vault
+              </button>
+            </div>
+          </div>
+        ) : latestFinishedSession && latestFinishedSession.status === 'completed' && latestFinishedSession.isVerified && !connectedUnregistered.length ? (
+          /* STATE E-2: TRULY VERIFIED BACKUP COMPLETED */
           <div className="bg-[#0D1B3D] border border-[#00A884]/40 rounded-xl p-3.5 space-y-2.5 text-xs">
             <div className="flex items-center gap-2 text-[#00A884] font-bold">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -332,7 +361,7 @@ export const TrayPopoverApp: React.FC = () => {
               </div>
             </div>
             <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
-              <span>{latestFinishedSession.isVerified ? 'SHA-256 Verified ✓' : 'Verified'}</span>
+              <span>SHA-256 Verified ✓</span>
               <span>{latestFinishedSession.driveName} ({latestFinishedSession.driveLetter})</span>
             </div>
           </div>
