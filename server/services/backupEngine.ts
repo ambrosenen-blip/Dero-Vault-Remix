@@ -10,6 +10,8 @@ import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { pipeline } from 'stream/promises';
+import { Transform } from 'stream';
 import { BackupProfile, BackupSession, FileCopyError, RemovableDrive } from '../types.js';
 import { LocalDatabase } from './localDb.js';
 import { FileScanner, ScannedFile, ScanError } from './fileScanner.js';
@@ -321,14 +323,34 @@ export class BackupEngine extends EventEmitter {
     let bytesSinceLastCheck = 0;
     let lastEmitTime = copyStartTime;
 
+    // Per-directory synchronization to protect FAT32/exFAT directory allocation tables from race corruption
+    const dirLocks = new Map<string, Promise<void>>();
+    const withDirLock = async <T>(dirPath: string, op: () => Promise<T>): Promise<T> => {
+      const key = path.resolve(dirPath).toLowerCase();
+      while (dirLocks.has(key)) {
+        await dirLocks.get(key);
+      }
+      let unlock!: () => void;
+      const p = new Promise<void>((r) => { unlock = r; });
+      dirLocks.set(key, p);
+      try {
+        return await op();
+      } finally {
+        dirLocks.delete(key);
+        unlock();
+      }
+    };
+
     // Cache of verified directories to eliminate redundant mkdir syscalls
     const ensuredDirs = new Set<string>();
     const ensureDirCached = async (targetDir: string) => {
       if (ensuredDirs.has(targetDir)) return;
-      if (!fs.existsSync(targetDir)) {
-        await fs.promises.mkdir(targetDir, { recursive: true });
-      }
-      ensuredDirs.add(targetDir);
+      await withDirLock(targetDir, async () => {
+        if (!fs.existsSync(targetDir)) {
+          await fs.promises.mkdir(targetDir, { recursive: true });
+        }
+        ensuredDirs.add(targetDir);
+      });
     };
 
     // Concurrency pipeline selection:
@@ -381,7 +403,9 @@ export class BackupEngine extends EventEmitter {
           if (item.action === 'MODIFIED' && item.versionArchivePath && fs.existsSync(item.destinationPath)) {
             const archiveDir = path.dirname(item.versionArchivePath);
             await ensureDirCached(archiveDir);
-            await fs.promises.copyFile(item.destinationPath, item.versionArchivePath);
+            await withDirLock(archiveDir, async () => {
+              await fs.promises.copyFile(item.destinationPath, item.versionArchivePath!);
+            });
           }
 
           // Ensure target directory exists in CURRENT
@@ -444,8 +468,20 @@ export class BackupEngine extends EventEmitter {
             await fs.promises.utimes(stagingPath, mtime, mtime);
           } catch {}
 
-          // 4. Atomically promote staged file to destination path
-          await fs.promises.rename(stagingPath, item.destinationPath);
+          // 4. Atomically promote staged file to destination path under directory mutex
+          await withDirLock(targetDir, async () => {
+            await fs.promises.rename(stagingPath, item.destinationPath);
+
+            // Force Windows FAT directory entry commit to physical USB storage
+            try {
+              const verifyHandle = await fs.promises.open(item.destinationPath, 'r');
+              try {
+                await verifyHandle.sync();
+              } finally {
+                await verifyHandle.close();
+              }
+            } catch {}
+          });
 
           // 5. Post-promotion confirmation: Verify destination actually exists and size matches
           const postStat = await fs.promises.stat(item.destinationPath);
@@ -456,6 +492,7 @@ export class BackupEngine extends EventEmitter {
           }
 
           successfullyCopied.push(item);
+          session.filesCopied = successfullyCopied.length;
           session.filesCopied = successfullyCopied.length;
         } catch (copyErr: any) {
           // If copy failed or drive disconnected, clean up incomplete staging file
@@ -670,47 +707,30 @@ export class BackupEngine extends EventEmitter {
       }
     } catch {}
 
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const hash = calculateHash ? crypto.createHash('sha256') : null;
-      const readStream = fs.createReadStream(sourcePath, { highWaterMark: 512 * 1024 });
-      const writeStream = fs.createWriteStream(destPath, { highWaterMark: 512 * 1024 });
-
-      readStream.on('data', (chunk: Buffer | string) => {
+    const hash = calculateHash ? crypto.createHash('sha256') : null;
+    const progressTransform = new Transform({
+      transform(chunk, _encoding, callback) {
         if (hash) hash.update(chunk);
         onChunk(chunk.length);
-      });
-
-      const handleErr = (err: any) => {
-        if (settled) return;
-        settled = true;
-        readStream.destroy();
-        writeStream.destroy();
-        reject(err);
-      };
-
-      readStream.on('error', handleErr);
-      writeStream.on('error', handleErr);
-
-      // Must wait for 'close' (not just 'finish') to ensure Windows releases the underlying file descriptor
-      writeStream.on('close', async () => {
-        if (settled) return;
-        settled = true;
-        try {
-          // Explicit flush to non-volatile USB media
-          try {
-            const handle = await fs.promises.open(destPath, 'r+');
-            await handle.sync();
-            await handle.close();
-          } catch {}
-          resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
-        } catch (syncErr) {
-          reject(syncErr);
-        }
-      });
-
-      readStream.pipe(writeStream);
+        callback(null, chunk);
+      },
     });
+
+    const readStream = fs.createReadStream(sourcePath, { highWaterMark: 512 * 1024 });
+    const writeStream = fs.createWriteStream(destPath, { highWaterMark: 512 * 1024 });
+
+    await pipeline(readStream, progressTransform, writeStream);
+
+    try {
+      const handle = await fs.promises.open(destPath, 'r+');
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    } catch {}
+
+    return { sha256Hex: hash ? hash.digest('hex') : '' };
   }
 
   /**
@@ -723,45 +743,30 @@ export class BackupEngine extends EventEmitter {
     onChunk: (bytes: number) => void,
     calculateHash: boolean = true
   ): Promise<{ sha256Hex: string }> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const hash = calculateHash ? crypto.createHash('sha256') : null;
-      const readStream = fs.createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
-      const writeStream = fs.createWriteStream(destPath, { highWaterMark: 64 * 1024 });
-
-      readStream.on('data', (chunk: Buffer | string) => {
+    const hash = calculateHash ? crypto.createHash('sha256') : null;
+    const progressTransform = new Transform({
+      transform(chunk, _encoding, callback) {
         if (hash) hash.update(chunk);
         onChunk(chunk.length);
-      });
-
-      const handleErr = (err: any) => {
-        if (settled) return;
-        settled = true;
-        readStream.destroy();
-        writeStream.destroy();
-        reject(err);
-      };
-
-      readStream.on('error', handleErr);
-      writeStream.on('error', handleErr);
-
-      writeStream.on('close', async () => {
-        if (settled) return;
-        settled = true;
-        try {
-          try {
-            const handle = await fs.promises.open(destPath, 'r+');
-            await handle.sync();
-            await handle.close();
-          } catch {}
-          resolve({ sha256Hex: hash ? hash.digest('hex') : '' });
-        } catch (syncErr) {
-          reject(syncErr);
-        }
-      });
-
-      readStream.pipe(writeStream);
+        callback(null, chunk);
+      },
     });
+
+    const readStream = fs.createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
+    const writeStream = fs.createWriteStream(destPath, { highWaterMark: 64 * 1024 });
+
+    await pipeline(readStream, progressTransform, writeStream);
+
+    try {
+      const handle = await fs.promises.open(destPath, 'r+');
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    } catch {}
+
+    return { sha256Hex: hash ? hash.digest('hex') : '' };
   }
 
   private async copyFileStreamed(

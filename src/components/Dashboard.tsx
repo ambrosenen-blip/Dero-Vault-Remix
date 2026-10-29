@@ -108,9 +108,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
     : (currentSession || (history.length > 0 ? history[0] : null));
 
   const latestSession: BackupSession | null =
-    driveSpecificSession && ['completed', 'completed_with_errors', 'failed', 'interrupted', 'stopped_insufficient_space'].includes(driveSpecificSession.status)
+    driveSpecificSession && ['completed', 'completed_with_errors', 'incomplete', 'failed', 'interrupted', 'stopped_insufficient_space'].includes(driveSpecificSession.status)
       ? driveSpecificSession
       : null;
+
+  const isDriveVerifiedAndProtected = Boolean(
+    latestSession &&
+    latestSession.driveStableId === primaryDrive?.stableHardwareId &&
+    latestSession.status === 'completed' &&
+    latestSession.isVerified
+  );
 
   // Show capacity warning banner on dashboard ONLY if it strictly belongs to the currently active/connected primary drive
   const isWarningForCurrentDrive = Boolean(
@@ -219,7 +226,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 isBackingUp
                   ? 'bg-[#F4A62A] animate-pulse'
                   : connectedRegistered.length > 0
-                  ? 'bg-[#00A884]'
+                  ? isDriveVerifiedAndProtected
+                    ? 'bg-[#00A884]'
+                    : latestSession?.status === 'failed'
+                    ? 'bg-rose-500'
+                    : latestSession?.status === 'incomplete' || latestSession?.status === 'completed_with_errors'
+                    ? 'bg-amber-400'
+                    : latestSession?.status === 'stopped_insufficient_space'
+                    ? 'bg-amber-500'
+                    : 'bg-blue-400'
                   : 'bg-slate-400'
               }`}
             />
@@ -227,7 +242,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {isBackingUp
                 ? `${currentSession?.mode === 'turbo' ? 'Turbo' : 'Standard'} backup · ${currentSession?.driveName || ''} (${progressPercent.toFixed(0)}%)`
                 : connectedRegistered.length > 0
-                ? `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Protected`
+                ? isDriveVerifiedAndProtected
+                  ? `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Protected`
+                  : latestSession?.status === 'incomplete' || latestSession?.status === 'completed_with_errors'
+                  ? `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Attention: Unverified Files`
+                  : latestSession?.status === 'failed'
+                  ? `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Backup Failed`
+                  : latestSession?.status === 'stopped_insufficient_space'
+                  ? `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Halted: Insufficient Space`
+                  : `${connectedRegistered[0].friendlyName || connectedRegistered[0].volumeLabel} (${connectedRegistered[0].driveLetter}) · Ready to Back Up`
                 : connectedUnregistered.length > 0
                 ? `New USB (${connectedUnregistered[0].driveLetter}) · Ready to configure`
                 : 'Monitoring USB · Connect drive to back up'}
@@ -474,10 +497,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
 
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-[#00A884] font-semibold px-2.5 py-0.5 rounded-full bg-[#00A884]/15 border border-[#00A884]/30">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#00A884]" />
-                  Protected Storage
-                </span>
+                {isDriveVerifiedAndProtected ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-[#00A884] font-semibold px-2.5 py-0.5 rounded-full bg-[#00A884]/15 border border-[#00A884]/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00A884]" />
+                    Protected Storage
+                  </span>
+                ) : latestSession?.status === 'incomplete' || latestSession?.status === 'completed_with_errors' ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-semibold px-2.5 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Unverified / Incomplete
+                  </span>
+                ) : latestSession?.status === 'failed' ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-rose-400 font-semibold px-2.5 py-0.5 rounded-full bg-rose-400/15 border border-rose-400/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                    Backup Failed
+                  </span>
+                ) : latestSession?.status === 'stopped_insufficient_space' ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-semibold px-2.5 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Insufficient Space
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-blue-400 font-semibold px-2.5 py-0.5 rounded-full bg-blue-400/15 border border-blue-400/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                    Registered Granary
+                  </span>
+                )}
               </div>
 
               {/* Storage Space Bar */}

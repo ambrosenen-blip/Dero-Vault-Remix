@@ -295,9 +295,63 @@ async function runIntegrityRemediationSuite() {
   assert(jsonContent.reconciliation !== undefined, '5.7 JSON report contains reconciliation object');
   assert(jsonContent.reconciliation.isFullyReconciled === true, '5.8 JSON reconciliation reports fully reconciled state');
 
+  // --- SECTION 6: NESTED FOLDER PRUNING & DEDUPLICATION ---
+  console.log('\n--- 6. Nested Folder Pruning & Scan Deduplication ---');
+  const rawFolderList = [
+    'D:\\',
+    'D:\\OMAA_ADMINISTRATION',
+    'D:\\OMAA_CLIENTS_WORK',
+    'D:\\OMAA_CLIENTS_WORK\\IJJO_RONALD_&_JUDITH_GONZALEZ',
+    'D:\\ENEN DIGITAL LABS',
+    'D:\\ENEN DIGITAL LABS\\PGDLSE',
+    'C:\\Users\\ENEN AMBROSE\\Downloads',
+  ];
+  const pruned = FileScanner.pruneContainedFolders(rawFolderList);
+  assert(
+    pruned.includes('D:\\') && pruned.includes('C:\\Users\\ENEN AMBROSE\\Downloads'),
+    '6.1 Pruned list retains top-level root and distinct drive folders'
+  );
+  assert(
+    !pruned.includes('D:\\OMAA_ADMINISTRATION') &&
+      !pruned.includes('D:\\OMAA_CLIENTS_WORK') &&
+      !pruned.includes('D:\\ENEN DIGITAL LABS\\PGDLSE'),
+    '6.2 Pruned list eliminates redundant child folders contained by D:\\'
+  );
+  assert(pruned.length === 2, `6.3 Exactly 2 top-level paths retained from 7 overlapping inputs (got: ${pruned.length})`);
+
+  // --- SECTION 7: DESTINATION COLLISION DETECTION & DISAMBIGUATION ---
+  console.log('\n--- 7. Destination Path Collision Disambiguation ---');
+  const assigned = new Map<string, string>();
+  const testDestRoot = path.join(DEST_DRIVE, 'DERO_VAULT_BACKUP', 'CURRENT');
+
+  const fileA = {
+    fullPath: 'D:\\Projects\\Alpha\\notes.txt',
+    sourceBaseFolder: 'D:\\Projects\\Alpha',
+    sourceFolderName: 'Alpha',
+    relativePath: 'notes.txt',
+    size: 50,
+    mtimeMs: Date.now(),
+  };
+  const fileB = {
+    fullPath: 'D:\\OldArchive\\Alpha\\notes.txt',
+    sourceBaseFolder: 'D:\\OldArchive\\Alpha',
+    sourceFolderName: 'Alpha',
+    relativePath: 'notes.txt',
+    size: 75,
+    mtimeMs: Date.now(),
+  };
+
+  const destA = FileComparison.resolveDestinationPath(testDestRoot, fileA, assigned);
+  const destB = FileComparison.resolveDestinationPath(testDestRoot, fileB, assigned);
+
+  assert(destA !== destB, '7.1 Colliding paths are disambiguated and never equal');
+  assert(assigned.size === 2, '7.2 Both files tracked uniquely in assigned destinations map');
+  assert(assigned.get(destA.toLowerCase()) === fileA.fullPath, '7.3 destA maps to fileA fullPath');
+  assert(assigned.get(destB.toLowerCase()) === fileB.fullPath, '7.4 destB maps to fileB fullPath');
+
   cleanup();
   console.log('\n==================================================================');
-  console.log('CRITICAL REMEDIATION SUITE: ALL 23 INTEGRITY TESTS PASSED (0 FAILED)');
+  console.log('CRITICAL REMEDIATION SUITE: ALL 30 INTEGRITY TESTS PASSED (0 FAILED)');
   console.log('==================================================================');
 }
 

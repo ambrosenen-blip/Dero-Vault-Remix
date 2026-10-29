@@ -92,9 +92,26 @@ export class BackupVerification {
         const source = item.source.fullPath;
         const dest = item.destinationPath;
 
-        // 1 & 2. Existence and Size check in single stat syscall
+        // 1 & 2. Existence and Size check in single stat syscall (with transient retry for USB media latency)
         try {
-          const destStat = await fs.promises.stat(dest);
+          let statErr: any = null;
+          let destStat: fs.Stats | null = null;
+          for (let attempt = 0; attempt <= 2; attempt++) {
+            try {
+              destStat = await fs.promises.stat(dest);
+              break;
+            } catch (err: any) {
+              statErr = err;
+              if (attempt < 2 && (err.code === 'ENOENT' || err.code === 'EBUSY' || err.code === 'EPERM')) {
+                await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+                continue;
+              }
+              break;
+            }
+          }
+          if (!destStat) {
+            throw statErr;
+          }
           if (destStat.size !== item.size) {
             failures.push({
               sourcePath: source,

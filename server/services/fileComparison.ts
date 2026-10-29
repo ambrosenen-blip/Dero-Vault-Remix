@@ -96,6 +96,47 @@ export class FileComparison {
   }
 
   /**
+   * Resolves a destination file path collision-free across multiple source folders.
+   * Normalizes path separators cross-platform and disambiguates collisions with stable namespace hashing.
+   */
+  public static resolveDestinationPath(
+    currentBackupDir: string,
+    source: ScannedFile,
+    assignedDestinations: Map<string, string>
+  ): string {
+    const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
+    const cleanRelative = source.relativePath.replace(/^([\\/]|(\.\.[\\/]))+/, '');
+    // Normalize path separators cross-platform (handling Windows backslashes even in POSIX runtimes)
+    const normalizedRelative = cleanRelative.split(/[\\/]+/).filter(Boolean).join(path.sep);
+    let destFilePath = path.join(currentBackupDir, sourceNamespace, normalizedRelative);
+    const lowerKey = destFilePath.toLowerCase();
+
+    const existing = assignedDestinations.get(lowerKey);
+    if (!existing || existing.toLowerCase() === source.fullPath.toLowerCase()) {
+      assignedDestinations.set(lowerKey, source.fullPath);
+      return destFilePath;
+    }
+
+    // Collision detected: Multiple distinct source files mapped to the same destination path.
+    // Disambiguate using a stable hash of the source base folder.
+    const driveMatch = source.sourceBaseFolder.match(/^([a-zA-Z]):/);
+    const drivePrefix = driveMatch ? `${driveMatch[1].toUpperCase()}_` : '';
+    const cleanBase = path.basename(source.sourceBaseFolder).replace(/[^a-zA-Z0-9_\-\s]/g, '_').trim() || 'Src';
+    const disambiguatedNamespace = `${drivePrefix}${cleanBase}`;
+    let candidate = path.join(currentBackupDir, disambiguatedNamespace, normalizedRelative);
+
+    if (assignedDestinations.has(candidate.toLowerCase()) && assignedDestinations.get(candidate.toLowerCase()) !== source.fullPath) {
+      // Secondary fallback with path hash
+      const hash = source.sourceBaseFolder.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0) | 0, 0);
+      const hexHash = Math.abs(hash).toString(16).substring(0, 4);
+      candidate = path.join(currentBackupDir, `${sourceNamespace}_${hexHash}`, normalizedRelative);
+    }
+
+    assignedDestinations.set(candidate.toLowerCase(), source.fullPath);
+    return candidate;
+  }
+
+  /**
    * Compares scanned source files with the destination backup directory.
    */
   public static async compare(
@@ -120,13 +161,12 @@ export class FileComparison {
     const newFiles: PlannedFileCopy[] = [];
     const modifiedFiles: PlannedFileCopy[] = [];
     let totalBytesToCopy = 0;
+    const assignedDestinations = new Map<string, string>();
 
     // Fast-path: If initial backup, all scanned files are definitively NEW
     if (isInitialBackup) {
       for (const source of scannedFiles) {
-        const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
-        const safeRelative = source.relativePath.replace(/^([\\/]|(\.\.[\\/]))+/, '');
-        const destFilePath = path.join(currentBackupDir, sourceNamespace, safeRelative);
+        const destFilePath = this.resolveDestinationPath(currentBackupDir, source, assignedDestinations);
         const item: PlannedFileCopy = {
           source,
           destinationPath: destFilePath,
@@ -170,9 +210,9 @@ export class FileComparison {
       while (nextIndex < scannedFiles.length) {
         const source = scannedFiles[nextIndex++];
         if (!source) break;
-        const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
-        const safeRelative = source.relativePath.replace(/^([\\/]|(\.\.[\\/]))+/, '');
-        const destFilePath = path.join(currentBackupDir, sourceNamespace, safeRelative);
+        const destFilePath = this.resolveDestinationPath(currentBackupDir, source, assignedDestinations);
+        const cleanRelative = source.relativePath.replace(/^([\\/]|(\.\.[\\/]))+/, '');
+        const normalizedRelative = cleanRelative.split(/[\\/]+/).filter(Boolean).join(path.sep);
 
         try {
           const destStat = await fs.promises.stat(destFilePath);
@@ -184,8 +224,9 @@ export class FileComparison {
           if (sizeMatches && timeMatches) {
             lock.pushSkip(source);
           } else {
+            const sourceNamespace = this.getSourceNamespace(source.sourceBaseFolder, source.sourceFolderName);
             const versionArchivePath = preserveVersions
-              ? path.join(versionsBaseDir, revisionFolder, sourceNamespace, safeRelative)
+              ? path.join(versionsBaseDir, revisionFolder, sourceNamespace, normalizedRelative)
               : undefined;
 
             lock.pushMod({

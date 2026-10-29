@@ -43,6 +43,67 @@ const SYSTEM_VOLUME_EXCLUSIONS = new Set([
 
 export class FileScanner {
   /**
+   * Prunes nested or sub-folder paths from the list of folders.
+   * If a parent folder or drive root is already included, redundant child folders are pruned
+   * to prevent duplicate file copies, conflicting namespaces, and directory contention.
+   */
+  public static pruneContainedFolders(folders: string[]): string[] {
+    if (!folders || folders.length <= 1) return folders || [];
+
+    const normalized = folders.map((f) => {
+      const norm = FileComparison.normalizeSourceFolder(f).normalizedPath;
+      const clean = norm.replace(/[\\/]+$/, '');
+      return { original: f, normalized: clean.toLowerCase(), cleanPath: clean };
+    });
+
+    const kept: string[] = [];
+    for (let i = 0; i < normalized.length; i++) {
+      let isContained = false;
+      const current = normalized[i];
+
+      for (let j = 0; j < normalized.length; j++) {
+        if (i === j) continue;
+        const parent = normalized[j];
+
+        // Root check (e.g., 'd:' or 'd:\' or '/')
+        const parentDriveMatch = parent.normalized.match(/^([a-z]):$/);
+        if (parentDriveMatch) {
+          const parentDrive = parentDriveMatch[1];
+          if (
+            current.normalized.startsWith(`${parentDrive}:\\`) ||
+            current.normalized.startsWith(`${parentDrive}:/`)
+          ) {
+            isContained = true;
+            break;
+          }
+        }
+
+        const parentWithSlash = parent.normalized.endsWith('\\') || parent.normalized.endsWith('/')
+          ? parent.normalized
+          : `${parent.normalized}\\`;
+        const parentWithPosixSlash = parent.normalized.endsWith('/')
+          ? parent.normalized
+          : `${parent.normalized}/`;
+
+        if (
+          current.normalized === parent.normalized ||
+          current.normalized.startsWith(parentWithSlash) ||
+          current.normalized.startsWith(parentWithPosixSlash)
+        ) {
+          isContained = true;
+          break;
+        }
+      }
+
+      if (!isContained) {
+        kept.push(current.original);
+      }
+    }
+
+    return kept;
+  }
+
+  /**
    * Scans an array of folder paths or drive roots, invoking onProgress periodically.
    * Returns discovered files and any isolated scan errors.
    */
@@ -54,7 +115,10 @@ export class FileScanner {
     const errors: ScanError[] = [];
     let scannedCount = 0;
 
-    for (const folder of folders) {
+    const prunedFolders = this.pruneContainedFolders(folders);
+    const visitedFiles = new Set<string>();
+
+    for (const folder of prunedFolders) {
       const normalized = FileComparison.normalizeSourceFolder(folder);
       const targetFolder = normalized.normalizedPath;
 
@@ -77,12 +141,21 @@ export class FileScanner {
         visitedDirs.add(targetFolder);
       }
 
-      await this.scanRecursive(targetFolder, targetFolder, folderName, results, errors, visitedDirs, (count) => {
-        scannedCount += count;
-        if (onProgress && (scannedCount <= 10 || scannedCount % 10 === 0)) {
-          onProgress(scannedCount, targetFolder);
+      await this.scanRecursive(
+        targetFolder,
+        targetFolder,
+        folderName,
+        results,
+        errors,
+        visitedDirs,
+        visitedFiles,
+        (count) => {
+          scannedCount += count;
+          if (onProgress && (scannedCount <= 10 || scannedCount % 10 === 0)) {
+            onProgress(scannedCount, targetFolder);
+          }
         }
-      });
+      );
     }
 
     if (onProgress) {
@@ -102,6 +175,7 @@ export class FileScanner {
     results: ScannedFile[],
     errors: ScanError[],
     visitedDirs: Set<string>,
+    visitedFiles: Set<string>,
     onBatch: (count: number) => void
   ): Promise<void> {
     let entries: fs.Dirent[];
@@ -173,8 +247,19 @@ export class FileScanner {
           }
 
           // Recurse into directory
-          await this.scanRecursive(fullPath, baseDir, baseFolderName, results, errors, visitedDirs, onBatch);
+          await this.scanRecursive(fullPath, baseDir, baseFolderName, results, errors, visitedDirs, visitedFiles, onBatch);
         } else if (isFile) {
+          // Deduplicate across overlapping folder configurations
+          let canonicalFile = fullPath;
+          try {
+            canonicalFile = await fs.promises.realpath(fullPath);
+          } catch {}
+          const lowerCanonical = canonicalFile.toLowerCase();
+          if (visitedFiles.has(lowerCanonical)) {
+            continue;
+          }
+          visitedFiles.add(lowerCanonical);
+
           try {
             const stats = await fs.promises.stat(fullPath);
             let relativePath: string;
